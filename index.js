@@ -594,7 +594,7 @@ const port = process.env.PORT || 7000;
 
 // 🛡️ SECURITY AND SETUP (Building rules)
 app.use(cors({
-    origin: 'http://localhost:3000',  // Only let people from this address in
+    origin: ['http://localhost:3000', 'https://voicefrontend-4.onrender.com'], // Allow both development and production origins
     credentials: true,
 }));
 app.use(express.json());  // Understand JSON messages
