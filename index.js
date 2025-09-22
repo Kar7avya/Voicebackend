@@ -594,7 +594,7 @@ const port = process.env.PORT || 7000;
 
 // 🛡️ SECURITY AND SETUP (Building rules)
 app.use(cors({
-    origin: ['http://localhost:3000', 'https://voicefrontend-4.onrender.com'],
+    origin: true, // Allows any origin - TEMPORARY FIX ONLY!
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
