@@ -26,8 +26,10 @@ const port = process.env.PORT || 7000;
 
 // 🛡️ SECURITY AND SETUP (Building rules)
 app.use(cors({
-    origin: ['http://localhost:3000', 'https://voicefrontend-4.onrender.com'], // Allow both development and production origins
+    origin: true, // Allows any origin - TEMPORARY FIX ONLY!
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json());  // Understand JSON messages
 app.use(express.urlencoded({ extended: true }));  // Understand form data
@@ -72,19 +74,3 @@ app.listen(port, () => {
 });
 
 export default app;
-
-
-
-
-
-
-///////////////
-////////////////
-const server =http.createServer(app);
-const io  = new Server(server);
-
-io.on('connection',(socket)=>{
-    console.log('Connection done',socket.id);
-});
-/////////////
-//////////////
