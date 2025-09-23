@@ -22,7 +22,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const port = process.env.PORT || 7000;
 
-// 🛡️ SECURITY AND SETUP (CORS FIXED)
 const allowedOrigins = [
   "http://localhost:3000",                // local dev
   "https://voicefrontend-4.onrender.com"  // deployed frontend
@@ -31,7 +30,10 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
+      console.log("🌍 Incoming request Origin:", origin); // 👈 log the request origin
+
       if (!origin || allowedOrigins.includes(origin)) {
+        console.log("✅ Allowed Origin:", origin || "No origin (Postman/curl)");
         callback(null, true);
       } else {
         console.error("❌ Blocked by CORS:", origin);
@@ -43,6 +45,7 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
 
 app.use(express.json()); // Parse JSON
 app.use(express.urlencoded({ extended: true })); // Parse form data
