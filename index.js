@@ -27,10 +27,17 @@ const allowedOrigins = [
   "https://voicefrontend-4.onrender.com"  // deployed frontend
 ];
 
+// 🔍 Log every incoming request (method + url)
+app.use((req, res, next) => {
+  console.log(`➡️ Incoming request: [${req.method}] ${req.originalUrl}`);
+  next();
+});
+
+// 🛡️ SECURITY AND SETUP (CORS FIXED + DEBUG LOGS)
 app.use(
   cors({
     origin: function (origin, callback) {
-      console.log("🌍 Incoming request Origin:", origin); // 👈 log the request origin
+      console.log("🌍 Incoming request Origin:", origin);
 
       if (!origin || allowedOrigins.includes(origin)) {
         console.log("✅ Allowed Origin:", origin || "No origin (Postman/curl)");
@@ -46,6 +53,11 @@ app.use(
   })
 );
 
+// 📝 Log preflight (OPTIONS) requests explicitly
+app.options("*", (req, res) => {
+  console.log(`🟡 Preflight request received for ${req.originalUrl}`);
+  res.sendStatus(200);
+});
 
 app.use(express.json()); // Parse JSON
 app.use(express.urlencoded({ extended: true })); // Parse form data
@@ -63,7 +75,11 @@ app.use(express.urlencoded({ extended: true })); // Parse form data
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/frames", express.static(path.join(__dirname, "frames")));
 
-// 🚦 API Routes
+// 🚦 API Routes with logging
+app.use("/api", (req, res, next) => {
+  console.log(`📡 API route accessed: ${req.method} ${req.originalUrl}`);
+  next();
+});
 app.use("/api", uploadRoutes);
 app.use("/api", framesRoutes);
 app.use("/api", transcriptionRoutes);
@@ -71,6 +87,7 @@ app.use("/api", metadataRoutes);
 
 // 💓 Health check
 app.get("/health", (req, res) => {
+  console.log("💚 Health check endpoint hit");
   res.json({
     status: "OK",
     timestamp: new Date().toISOString(),
