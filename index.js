@@ -1,5 +1,3 @@
-
-
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -25,14 +23,34 @@ const app = express();
 const port = process.env.PORT || 7000;
 
 // 🛡️ SECURITY AND SETUP (Building rules)
+
+// 🚨 FIX: Explicitly set the frontend origin for CORS
+const allowedOrigins = [
+    // Your Vercel frontend URL, taken directly from the error message
+    'https://voicefrontend-seven.vercel.app', 
+    // Add other necessary origins, like localhost for development
+    'http://localhost:3000', 
+    'http://localhost:5173'
+];
+
 app.use(cors({
-    origin: true, // Allows any origin - TEMPORARY FIX ONLY!
+    // Use a function to dynamically check if the origin is allowed
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        // AND allow all origins in the allowedOrigins array
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-app.use(express.json());  // Understand JSON messages
-app.use(express.urlencoded({ extended: true }));  // Understand form data
+
+app.use(express.json());    // Understand JSON messages
+app.use(express.urlencoded({ extended: true }));    // Understand form data
 
 // 📁 Make sure we have storage rooms (create folders if they don't exist)
 ["uploads", "frames"].forEach((folder) => {
@@ -48,8 +66,8 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/frames", express.static(path.join(__dirname, "frames")));
 
 // 🚦 TRAFFIC DIRECTIONS (Tell people which department handles what)
-app.use('/api', uploadRoutes);        // "Need to upload? Go to upload department"
-app.use('/api', framesRoutes);        // "Need frames? Go to frames department"  
+app.use('/api', uploadRoutes);          // "Need to upload? Go to upload department"
+app.use('/api', framesRoutes);          // "Need frames? Go to frames department"    
 app.use('/api', transcriptionRoutes); // "Need transcription? Go to transcription department"
 app.use('/api', metadataRoutes);      // "Need data info? Go to metadata department"
 
