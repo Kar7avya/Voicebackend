@@ -75,8 +75,10 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Handle preflight requests explicitly
-// 🚀 FINAL FIX: Use named wildcard parameter to resolve PathError (Missing parameter name).
-app.options('/:path*', cors(corsOptions));
+// 🚀 FINAL PROPER FIX: Revert to simple wildcard '*' and ensure proper middleware use.
+// This is the standard Express/CORS fix that avoids path-to-regexp errors by 
+// letting the cors middleware handle the request termination.
+app.options('*', cors(corsOptions));
 
 // ============================================
 // 📦 OTHER MIDDLEWARE
