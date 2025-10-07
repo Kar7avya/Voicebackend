@@ -1,5 +1,5 @@
 // ============================================
-// METADATA.CONTROLLER.JS - FIXED WITH getAllUsersWithVideos
+// METADATA.CONTROLLER.JS - COMPLETE AND FIXED
 // ============================================
 
 import { supabase } from '../config/database.js';
@@ -214,12 +214,11 @@ export const deleteMetadata = async (req, res) => {
     }
 };
 
-// Get metadata by user - FIXED to check both columns
+// Get metadata by user
 export const getMetadataByUser = async (req, res) => {
     try {
         const { userId } = req.params;
 
-        // Query using OR to check both user_id and user_id_string
         const { data, error } = await supabase
             .from('metadata')
             .select('*')
@@ -304,7 +303,53 @@ export const searchMetadata = async (req, res) => {
     }
 };
 
-// Get all users with their videos - MISSING FUNCTION ADDED
+// Get user-video relationships for a specific user
+export const getUserVideoRelationships = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        console.log(`Metadata Worker: Getting video relationships for user ${userId}...`);
+
+        const { data, error } = await supabase
+            .from('metadata')
+            .select('id, user_id, user_id_string, video_name, original_name, created_at, file_size, video_url')
+            .or(`user_id.eq.${userId},user_id_string.eq.${userId}`)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error("Metadata Worker: Database query failed:", error);
+            return res.status(500).json({ 
+                success: false, 
+                error: error.message 
+            });
+        }
+
+        const relationships = data?.map(video => ({
+            videoId: video.id,
+            userId: video.user_id || video.user_id_string,
+            videoName: video.video_name,
+            originalName: video.original_name,
+            videoUrl: video.video_url,
+            uploadedAt: video.created_at,
+            fileSize: video.file_size
+        })) || [];
+
+        res.json({ 
+            success: true, 
+            userId,
+            totalVideos: relationships.length,
+            data: relationships
+        });
+
+    } catch (error) {
+        console.error("Metadata Worker: Unexpected error:", error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+};
+
+// Get all users with their videos summary
 export const getAllUsersWithVideos = async (req, res) => {
     try {
         console.log("Metadata Worker: Getting all users with videos...");
@@ -333,13 +378,25 @@ export const getAllUsersWithVideos = async (req, res) => {
                     userId,
                     videos: [],
                     totalVideos: 0,
-                    totalStorage: 0
+                    totalStorage: 0,
+                    lastActivity: video.created_at
                 };
             }
             
-            userMap[userId].videos.push(video);
+            userMap[userId].videos.push({
+                id: video.id,
+                videoName: video.video_name,
+                originalName: video.original_name,
+                uploadedAt: video.created_at,
+                fileSize: video.file_size
+            });
             userMap[userId].totalVideos += 1;
             userMap[userId].totalStorage += video.file_size || 0;
+            
+            // Update last activity if this video is more recent
+            if (new Date(video.created_at) > new Date(userMap[userId].lastActivity)) {
+                userMap[userId].lastActivity = video.created_at;
+            }
         });
 
         const users = Object.values(userMap);
@@ -347,6 +404,7 @@ export const getAllUsersWithVideos = async (req, res) => {
         res.json({ 
             success: true, 
             totalUsers: users.length,
+            totalVideos: data?.length || 0,
             data: users
         });
 
