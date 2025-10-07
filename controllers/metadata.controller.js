@@ -1,5 +1,5 @@
 // ============================================
-// 2. METADATA.CONTROLLER.JS - FIXED
+// METADATA.CONTROLLER.JS - FIXED WITH getAllUsersWithVideos
 // ============================================
 
 import { supabase } from '../config/database.js';
@@ -297,6 +297,61 @@ export const searchMetadata = async (req, res) => {
         });
 
     } catch (error) {
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+};
+
+// Get all users with their videos - MISSING FUNCTION ADDED
+export const getAllUsersWithVideos = async (req, res) => {
+    try {
+        console.log("Metadata Worker: Getting all users with videos...");
+
+        const { data, error } = await supabase
+            .from('metadata')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error("Metadata Worker: Database query failed:", error);
+            return res.status(500).json({ 
+                success: false, 
+                error: error.message 
+            });
+        }
+
+        // Group videos by user
+        const userMap = {};
+        
+        data?.forEach(video => {
+            const userId = video.user_id || video.user_id_string || 'unknown';
+            
+            if (!userMap[userId]) {
+                userMap[userId] = {
+                    userId,
+                    videos: [],
+                    totalVideos: 0,
+                    totalStorage: 0
+                };
+            }
+            
+            userMap[userId].videos.push(video);
+            userMap[userId].totalVideos += 1;
+            userMap[userId].totalStorage += video.file_size || 0;
+        });
+
+        const users = Object.values(userMap);
+
+        res.json({ 
+            success: true, 
+            totalUsers: users.length,
+            data: users
+        });
+
+    } catch (error) {
+        console.error("Metadata Worker: Unexpected error:", error);
         res.status(500).json({ 
             success: false, 
             error: error.message 
