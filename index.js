@@ -75,8 +75,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Handle preflight requests explicitly
-// 🚀 FIX APPLIED HERE: Changed '*' to '/*' to resolve PathError.
-app.options('/*', cors(corsOptions));
+// 🚀 FINAL FIX: Use named wildcard parameter to resolve PathError (Missing parameter name).
+app.options('/:path*', cors(corsOptions));
 
 // ============================================
 // 📦 OTHER MIDDLEWARE
