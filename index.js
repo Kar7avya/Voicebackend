@@ -27,72 +27,66 @@ const port = process.env.PORT || 7000;
 // ============================================
 
 const corsOptions = {
-    origin: function (origin, callback) {
-        console.log(`📡 CORS Request from: ${origin}`); 
+  origin: function (origin, callback) {
+    console.log(`📡 CORS Request from: ${origin}`);
 
-        // Allow requests with no origin (mobile apps, Postman, etc.)
-        if (!origin) {
-            console.log("✅ No origin - allowing");
-            return callback(null, true);
-        }
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) {
+      console.log("✅ No origin - allowing");
+      return callback(null, true);
+    }
 
-        // Allow all Vercel preview deployments automatically
-        if (
-            origin.includes('voicefrontend-b3te') && 
-            origin.includes('vercel.app')
-        ) {
-            console.log("✅ Vercel deployment - allowing");
-            return callback(null, true);
-        }
+    // Allow all Vercel preview deployments automatically
+    if (origin.includes("voicefrontend-b3te") && origin.includes("vercel.app")) {
+      console.log("✅ Vercel deployment - allowing");
+      return callback(null, true);
+    }
 
-        // Allow localhost for development
-        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-            console.log("✅ Localhost - allowing");
-            return callback(null, true);
-        }
+    // Allow localhost for development
+    if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
+      console.log("✅ Localhost - allowing");
+      return callback(null, true);
+    }
 
-        // Check against explicit allowed origins from env
-        const ALLOWED_ORIGINS = process.env.CORS_ORIGIN 
-            ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-            : [];
+    // Check against explicit allowed origins from env
+    const ALLOWED_ORIGINS = process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
+      : [];
 
-        if (ALLOWED_ORIGINS.includes(origin)) {
-            console.log("✅ Explicitly allowed origin");
-            return callback(null, true);
-        }
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      console.log("✅ Explicitly allowed origin");
+      return callback(null, true);
+    }
 
-        console.error(`❌ Origin BLOCKED: ${origin}`);
-        callback(new Error(`Not allowed by CORS: ${origin}`));
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    exposedHeaders: ['Content-Range', 'X-Content-Range'],
-    maxAge: 600 // Cache preflight for 10 minutes
+    console.error(`❌ Origin BLOCKED: ${origin}`);
+    callback(new Error(`Not allowed by CORS: ${origin}`));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  exposedHeaders: ["Content-Range", "X-Content-Range"],
+  maxAge: 600, // Cache preflight for 10 minutes
 };
 
 // Apply CORS BEFORE other middleware
 app.use(cors(corsOptions));
 
-// Handle preflight requests explicitly
-// 🚀 FINAL PROPER FIX: Revert to simple wildcard '*' and ensure proper middleware use.
-// This is the standard Express/CORS fix that avoids path-to-regexp errors by 
-// letting the cors middleware handle the request termination.
-app.options('*', cors(corsOptions));
+// ✅ FIXED: Use regex instead of '*' to avoid PathError
+app.options(/.*/, cors(corsOptions));
 
 // ============================================
 // 📦 OTHER MIDDLEWARE
 // ============================================
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
 // 📁 Ensure folders exist
 ["uploads", "frames"].forEach((folder) => {
-    const dir = path.join(__dirname, folder);
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-        console.log(`✅ Created ${folder} directory`);
-    }
+  const dir = path.join(__dirname, folder);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`✅ Created ${folder} directory`);
+  }
 });
 
 // 🖼️ Serve static files
@@ -102,32 +96,37 @@ app.use("/frames", express.static(path.join(__dirname, "frames")));
 // ============================================
 // 🚦 ROUTES
 // ============================================
-app.use('/api', uploadRoutes);        
-app.use('/api', framesRoutes);        
-app.use('/api', transcriptionRoutes); 
-app.use('/api', metadataRoutes);      
+app.use("/api", uploadRoutes);
+app.use("/api", framesRoutes);
+app.use("/api", transcriptionRoutes);
+app.use("/api", metadataRoutes);
 
 // 💓 Health check
 app.get("/health", (req, res) => {
-    console.log("💚 Health check endpoint hit");
-    res.json({
-        status: "OK",
-        timestamp: new Date().toISOString(),
-        message: "Server is running perfectly! 🚀",
-        cors: "All Vercel deployments allowed"
-    });
+  console.log("💚 Health check endpoint hit");
+  res.json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    message: "Server is running perfectly! 🚀",
+    cors: "All Vercel deployments allowed",
+  });
+});
+
+// 🚨 404 fallback route (for unmatched routes)
+app.use((req, res) => {
+  res.status(404).json({ error: "Route not found" });
 });
 
 // 🏢 Start server
 app.listen(port, () => {
-    console.log(`
-    🏢 ===================================
-    🚪 SERVER IS OPEN FOR BUSINESS! 
-    🌐 Visit: http://localhost:${port}
-    💚 Health Check: http://localhost:${port}/health
-    🛡️  CORS: Vercel + Localhost allowed
-    ===================================
-    `);
+  console.log(`
+  🏢 ===================================
+  🚪 SERVER IS OPEN FOR BUSINESS! 
+  🌐 Visit: http://localhost:${port}
+  💚 Health Check: http://localhost:${port}/health
+  🛡️  CORS: Vercel + Localhost allowed
+  ===================================
+  `);
 });
 
 export default app;
