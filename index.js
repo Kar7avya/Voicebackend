@@ -75,7 +75,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Handle preflight requests explicitly
-app.options('*', cors(corsOptions));
+// 🚀 FIX APPLIED HERE: Changed '*' to '/*' to resolve PathError.
+app.options('/*', cors(corsOptions));
 
 // ============================================
 // 📦 OTHER MIDDLEWARE
@@ -99,10 +100,10 @@ app.use("/frames", express.static(path.join(__dirname, "frames")));
 // ============================================
 // 🚦 ROUTES
 // ============================================
-app.use('/api', uploadRoutes);        
-app.use('/api', framesRoutes);        
+app.use('/api', uploadRoutes);        
+app.use('/api', framesRoutes);        
 app.use('/api', transcriptionRoutes); 
-app.use('/api', metadataRoutes);      
+app.use('/api', metadataRoutes);      
 
 // 💓 Health check
 app.get("/health", (req, res) => {
@@ -122,7 +123,7 @@ app.listen(port, () => {
     🚪 SERVER IS OPEN FOR BUSINESS! 
     🌐 Visit: http://localhost:${port}
     💚 Health Check: http://localhost:${port}/health
-    🛡️  CORS: Vercel + Localhost allowed
+    🛡️  CORS: Vercel + Localhost allowed
     ===================================
     `);
 });
