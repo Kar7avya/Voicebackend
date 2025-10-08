@@ -23,12 +23,12 @@ const app = express();
 const port = process.env.PORT || 7000;
 
 // ============================================
-// 🛡️ FIXED CORS CONFIGURATION
+// 🛡️ CORS CONFIGURATION
 // ============================================
 
 const corsOptions = {
   origin: function (origin, callback) {
-    console.log(`📡 CORS Request from: ${origin}`);
+    console.log(`📡 CORS Request from: ${origin || 'NO ORIGIN'}`);
 
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) {
@@ -70,8 +70,6 @@ const corsOptions = {
 
 // Apply CORS BEFORE other middleware
 app.use(cors(corsOptions));
-
-// ✅ FIXED: Use regex instead of '*' to avoid PathError
 app.options(/.*/, cors(corsOptions));
 
 // ============================================
@@ -79,6 +77,12 @@ app.options(/.*/, cors(corsOptions));
 // ============================================
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`📨 ${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
 
 // 📁 Ensure folders exist
 ["uploads", "frames"].forEach((folder) => {
@@ -94,14 +98,10 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use("/frames", express.static(path.join(__dirname, "frames")));
 
 // ============================================
-// 🚦 ROUTES
+// 🚦 ROUTES - CRITICAL: ORDER MATTERS!
 // ============================================
-app.use("/api", uploadRoutes);
-app.use("/api", framesRoutes);
-app.use("/api", transcriptionRoutes);
-app.use("/api/metadata", metadataRoutes);
 
-// 💓 Health check
+// Health check (no /api prefix)
 app.get("/health", (req, res) => {
   console.log("💚 Health check endpoint hit");
   res.json({
@@ -112,9 +112,34 @@ app.get("/health", (req, res) => {
   });
 });
 
-// 🚨 404 fallback route (for unmatched routes)
+// ✅ FIXED: Mount metadata routes with /api/metadata prefix
+app.use("/api/metadata", metadataRoutes);
+
+// Other routes with /api prefix
+app.use("/api", uploadRoutes);
+app.use("/api", framesRoutes);
+app.use("/api", transcriptionRoutes);
+
+// ============================================
+// 🚨 404 FALLBACK - MUST BE LAST!
+// ============================================
 app.use((req, res) => {
-  res.status(404).json({ error: "Route not found" });
+  console.log(`❌ 404 Not Found: ${req.method} ${req.url}`);
+  res.status(404).json({ 
+    success: false,
+    error: "Route not found",
+    requestedUrl: req.url,
+    method: req.method,
+    availableRoutes: {
+      health: "GET /health",
+      metadata: "GET /api/metadata",
+      metadataById: "GET /api/metadata/:id",
+      search: "GET /api/metadata/search",
+      upload: "POST /api/upload",
+      frames: "POST /api/extractFrames",
+      transcription: "POST /api/transcribeWithDeepgram"
+    }
+  });
 });
 
 // 🏢 Start server
@@ -122,9 +147,21 @@ app.listen(port, () => {
   console.log(`
   🏢 ===================================
   🚪 SERVER IS OPEN FOR BUSINESS! 
-  🌐 Visit: http://localhost:${port}
-  💚 Health Check: http://localhost:${port}/health
+  🌐 Port: ${port}
+  💚 Health: http://localhost:${port}/health
+  📋 Metadata: http://localhost:${port}/api/metadata
   🛡️  CORS: Vercel + Localhost allowed
+  ===================================
+  
+  📍 Available Routes:
+  ✅ GET  /health
+  ✅ GET  /api/metadata
+  ✅ GET  /api/metadata/:id
+  ✅ GET  /api/metadata/search
+  ✅ GET  /api/metadata/user/:userId
+  ✅ POST /api/upload
+  ✅ POST /api/extractFrames
+  ✅ POST /api/transcribeWithDeepgram
   ===================================
   `);
 });
