@@ -12,20 +12,14 @@ import {
 
 const router = express.Router();
 
-// Search routes (must come BEFORE parameterized routes to avoid conflicts)
+// CRITICAL: Specific routes FIRST, generic routes LAST
 router.get('/search', searchMetadata);
-
-// User summary route (must come BEFORE /users/:userId to avoid conflicts)
 router.get('/users/summary', getAllUsersWithVideos);
-
-// Basic metadata routes
+router.get('/users/:userId/videos', getUserVideoRelationships);
+router.get('/user/:userId', getMetadataByUser);
 router.get('/', getMetadata);
 router.get('/:id', getMetadataById);
 router.put('/:id', updateMetadata);
 router.delete('/:id', deleteMetadata);
-
-// User-specific routes
-router.get('/user/:userId', getMetadataByUser);
-router.get('/users/:userId/videos', getUserVideoRelationships);
 
 export default router;
