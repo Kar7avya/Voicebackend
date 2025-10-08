@@ -1,7 +1,3 @@
-// ============================================
-// metadata.routes.js - FOR app.use("/api", routes)
-// ============================================
-
 import express from 'express';
 import { 
     getMetadata, 
@@ -23,35 +19,22 @@ router.use((req, res, next) => {
 });
 
 // ============================================
-// ALL ROUTES MUST START WITH /metadata
-// Because server has: app.use("/api", metadataRoutes)
+// NO /metadata PREFIX - routes are relative to mount point
+// Mounted at /api/metadata in index.js
 // ============================================
 
-// SPECIFIC ROUTES FIRST (with /metadata prefix)
-router.get('/metadata/search', searchMetadata);
-router.get('/metadata/users/summary', getAllUsersWithVideos);
-router.get('/metadata/users/:userId/videos', getUserVideoRelationships);
-router.get('/metadata/user/:userId', getMetadataByUser);
+// SPECIFIC ROUTES FIRST
+router.get('/search', searchMetadata);                    // → /api/metadata/search
+router.get('/users/summary', getAllUsersWithVideos);      // → /api/metadata/users/summary
+router.get('/users/:userId/videos', getUserVideoRelationships); // → /api/metadata/users/:userId/videos
+router.get('/user/:userId', getMetadataByUser);           // → /api/metadata/user/:userId
 
-// ROOT METADATA ROUTE
-router.get('/metadata', getMetadata);  // GET /api/metadata
+// ROOT ROUTE - THIS IS THE KEY ONE!
+router.get('/', getMetadata);                             // → /api/metadata
 
-// GENERIC ROUTES LAST (with /metadata prefix)
-router.get('/metadata/:id', getMetadataById);    // GET /api/metadata/:id
-router.put('/metadata/:id', updateMetadata);     // PUT /api/metadata/:id
-router.delete('/metadata/:id', deleteMetadata);  // DELETE /api/metadata/:id
+// GENERIC ROUTES LAST
+router.get('/:id', getMetadataById);                      // → /api/metadata/:id
+router.put('/:id', updateMetadata);                       // → /api/metadata/:id
+router.delete('/:id', deleteMetadata);                    // → /api/metadata/:id
 
 export default router;
-
-
-// ============================================
-// ROUTE MAPPING EXAMPLES:
-// ============================================
-// With app.use("/api", metadataRoutes):
-//
-// Frontend calls:                    →  Backend route:
-// GET /api/metadata                  →  router.get('/metadata', ...)
-// GET /api/metadata/search           →  router.get('/metadata/search', ...)
-// GET /api/metadata/user/123         →  router.get('/metadata/user/:userId', ...)
-// GET /api/metadata/uuid-here        →  router.get('/metadata/:id', ...)
-// ============================================
