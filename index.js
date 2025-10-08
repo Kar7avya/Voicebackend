@@ -23,6 +23,16 @@ const app = express();
 const port = process.env.PORT || 7000;
 
 // ============================================
+// 🔍 DEBUG: Check if routes are imported correctly
+// ============================================
+console.log("\n🔍 === ROUTES DEBUG INFO ===");
+console.log("📦 Upload Routes:", typeof uploadRoutes, uploadRoutes ? "✅ Loaded" : "❌ Failed");
+console.log("📦 Frames Routes:", typeof framesRoutes, framesRoutes ? "✅ Loaded" : "❌ Failed");
+console.log("📦 Transcription Routes:", typeof transcriptionRoutes, transcriptionRoutes ? "✅ Loaded" : "❌ Failed");
+console.log("📦 Metadata Routes:", typeof metadataRoutes, metadataRoutes ? "✅ Loaded" : "❌ Failed");
+console.log("=========================\n");
+
+// ============================================
 // 🛡️ CORS CONFIGURATION
 // ============================================
 
@@ -112,13 +122,46 @@ app.get("/health", (req, res) => {
   });
 });
 
-// ✅ FIXED: Mount metadata routes with /api/metadata prefix
+// ============================================
+// 🔍 DEBUG METADATA ROUTES BEFORE MOUNTING
+// ============================================
+console.log("\n🔍 === METADATA ROUTES MOUNTING ===");
+console.log("🔍 Metadata Routes Type:", typeof metadataRoutes);
+console.log("🔍 Is Function?", typeof metadataRoutes === 'function');
+console.log("🔍 Has stack?", metadataRoutes?.stack ? `Yes (${metadataRoutes.stack.length} routes)` : "No");
+
+if (metadataRoutes && typeof metadataRoutes === 'function') {
+  console.log("✅ Metadata routes is a valid Express router");
+  
+  // List all routes if available
+  if (metadataRoutes.stack) {
+    console.log("📋 Registered routes in metadata router:");
+    metadataRoutes.stack.forEach((layer, index) => {
+      if (layer.route) {
+        const methods = Object.keys(layer.route.methods).join(', ').toUpperCase();
+        console.log(`   ${index + 1}. ${methods} ${layer.route.path}`);
+      }
+    });
+  }
+} else {
+  console.error("❌ Metadata routes is NOT a valid router!");
+  console.error("❌ Actual value:", metadataRoutes);
+}
+console.log("================================\n");
+
+// Mount metadata routes
 app.use("/api/metadata", metadataRoutes);
+console.log("✅ Mounted: /api/metadata");
 
 // Other routes with /api prefix
 app.use("/api", uploadRoutes);
+console.log("✅ Mounted: /api (upload routes)");
+
 app.use("/api", framesRoutes);
+console.log("✅ Mounted: /api (frames routes)");
+
 app.use("/api", transcriptionRoutes);
+console.log("✅ Mounted: /api (transcription routes)");
 
 // ============================================
 // 🚨 404 FALLBACK - MUST BE LAST!
