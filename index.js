@@ -99,7 +99,7 @@ app.use("/frames", express.static(path.join(__dirname, "frames")));
 app.use("/api", uploadRoutes);
 app.use("/api", framesRoutes);
 app.use("/api", transcriptionRoutes);
-app.use("/api", metadataRoutes);
+app.use("/api/metadata", metadataRoutes);
 
 // 💓 Health check
 app.get("/health", (req, res) => {
