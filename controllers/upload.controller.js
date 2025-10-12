@@ -184,6 +184,10 @@
 // UPLOAD.CONTROLLER.JS - FIXED FOR SUPABASE UUID
 // ============================================
 
+// ============================================
+// UPLOAD.CONTROLLER.JS - FIXED & FINAL
+// ============================================
+
 import { promises as fsp } from "fs";
 import path from "path";
 import { supabase } from "../config/database.js";
@@ -225,9 +229,7 @@ export const uploadVideo = async (req, res) => {
 
     console.log("👤 User ID:", userId);
 
-    // ===============================================
-    // ✅ FIX: VALIDATE USER_ID AS STANDARD UUID
-    // ===============================================
+    // ✅ FIX 1: Validate user_id as standard UUID (replaces old custom validation)
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
     if (!uuidRegex.test(userId)) {
@@ -240,9 +242,7 @@ export const uploadVideo = async (req, res) => {
     }
     
     console.log('✅ User ID validated as UUID.');
-    // ===============================================
-    // END FIX
-    // ===============================================
+    // ----------------------------------------------------
 
     // Read file buffer
     console.log("📖 Reading file from disk...");
@@ -292,7 +292,7 @@ export const uploadVideo = async (req, res) => {
     console.log("💾 Saving metadata to database...");
     const insertPayload = {
       user_id: userId,
-      user_id_string: userId, // For compatibility with metadata controller
+      // ❌ FIX 2: Removed the non-existent user_id_string column
       video_name: renamedFilename,
       original_name: file.originalname,
       video_url: publicUrl,
