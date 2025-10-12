@@ -30,72 +30,46 @@ const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
 const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('❌ Missing Supabase environment variables!');
-  console.error('Please add to your .env file:');
-  console.error('REACT_APP_SUPABASE_URL=your_supabase_url');
-  console.error('REACT_APP_SUPABASE_ANON_KEY=your_anon_key');
+  console.error('❌ Missing Supabase environment variables! Check .env file.');
 }
 
+// CRITICAL: Client initialized with the Anon Key for RLS enforcement
 const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-    storage: window.localStorage
-  }
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+  }
 });
-
-// Helper function to check if user is authenticated
-export const isAuthenticated = async () => {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    return !!session;
-  } catch (error) {
-    console.error('Auth check error:', error);
-    return false;
-  }
-};
 
 // Helper function to get current user
 export const getCurrentUser = async () => {
-  try {
-    const { data: { user }, error } = await supabase.auth.getUser();
-    if (error) throw error;
-    return user;
-  } catch (error) {
-    console.error('Get user error:', error);
-    return null;
-  }
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error) throw error;
+    return user;
+  } catch (error) {
+    return null;
+  }
 };
 
-// Helper function to get auth headers with Bearer token
+// CRITICAL: Provides the JWT token for backend security checks
 export const getAuthHeaders = async () => {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session?.access_token) {
-      throw new Error('No authentication token found');
-    }
-    
-    return {
-      'Authorization': `Bearer ${session.access_token}`
-    };
-  } catch (error) {
-    console.error('Get auth headers error:', error);
-    throw error;
-  }
-};
-
-// Helper function to sign out
-export const signOut = async () => {
-  try {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-    return true;
-  } catch (error) {
-    console.error('Sign out error:', error);
-    return false;
-  }
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session?.access_token) {
+      throw new Error('No authentication token found');
+    }
+    
+    return {
+      'Authorization': `Bearer ${session.access_token}`
+    };
+  } catch (error) {
+    console.error('Get auth headers error:', error);
+    throw error;
+  }
 };
 
 export default supabase;
