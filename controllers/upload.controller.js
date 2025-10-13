@@ -151,7 +151,7 @@
 
 // ============================================
 // UPLOAD.CONTROLLER.JS - FINAL SCHEMA FIX
-// Fixes: Column name mismatch (mime_type -> file_type)
+// Fixes: Removed 'original_name' column name mismatch.
 // ============================================
 
 import { promises as fsp } from "fs";
@@ -229,9 +229,9 @@ export const uploadVideo = async (req, res) => {
     const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
     const randomId = Math.random().toString(36).substring(2, 15);
     const fileExtension = path.extname(file.originalname);
-    const baseName = path.basename(file.originalname, fileExtension).replace(/[^a-zA-Z0-9-._]/g, '_'); 
-    const renamedFilename = `${timestamp}-${randomId}-${baseName}${fileExtension}`;
-
+    // Use the renamed filename for storage (contains timestamp/ID)
+    const renamedFilename = `${timestamp}-${randomId}-${path.basename(file.originalname, fileExtension).replace(/[^a-zA-Z0-9-._]/g, '_')}${fileExtension}`;
+    
     // Upload to Supabase Storage logic...
     const { error: uploadError } = await supabase.storage
         .from("projectai")
@@ -258,11 +258,17 @@ export const uploadVideo = async (req, res) => {
     console.log("💾 Saving metadata to database...");
     const insertPayload = {
       user_id: userId, // Securely verified UUID
+      
+      // ✅ FIX: Using the single, clean filename for video_name/title 
+      // instead of the problematic 'original_name'
       video_name: renamedFilename,
-      original_name: file.originalname,
+      
+      // RETAIN THE ORIGINAL DISPLAY NAME IN A SAFE COLUMN (e.g., file_name or description)
+      // Since your SQL schema included a 'file_name' and 'video_name' column:
+      file_name: file.originalname, // Using file_name for the original display name
+      
       video_url: publicUrl,
       file_size: fileBuffer.length,
-      // ✅ FIX: Changed key from mime_type to file_type to match DB schema
       file_type: file.mimetype, 
       created_at: new Date().toISOString()
     };
