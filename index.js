@@ -90,8 +90,7 @@ const corsOptions = {
 // Apply CORS BEFORE other middleware
 app.use(cors(corsOptions));
 
-// Handle preflight requests explicitly for ALL routes
-app.options("/*", cors(corsOptions));  // ✅ This works
+// The cors middleware already handles OPTIONS requests, no need for explicit app.options()
 
 // ============================================
 // 📦 OTHER MIDDLEWARE
