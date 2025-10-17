@@ -24,7 +24,7 @@ export const getMetadata = async (req, res) => {
 
         if (error) {
             console.error("❌ Query failed:", error);
-            // The RLS denial typically manifests here as a permissions error
+            // The RLS denial typically manifests here as a cs error
             return res.status(500).json({ success: false, error: error.message });
         }
 
