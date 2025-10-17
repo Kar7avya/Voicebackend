@@ -91,7 +91,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Handle preflight requests explicitly for ALL routes
-app.options("*", cors(corsOptions));
+app.options("/*", cors(corsOptions));  // ✅ This works
 
 // ============================================
 // 📦 OTHER MIDDLEWARE
