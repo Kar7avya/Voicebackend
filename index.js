@@ -33,22 +33,38 @@ console.log("📦 Metadata Routes:", typeof metadataRoutes, metadataRoutes ? "�
 console.log("=========================\n");
 
 // ============================================
-// 🛡️ CORS CONFIGURATION
+// 🛡️ CORS CONFIGURATION - FIXED VERSION
 // ============================================
+
+// Parse allowed origins from environment variable
+const ALLOWED_ORIGINS = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
+  : [];
+
+console.log("\n🛡️ === CORS CONFIGURATION ===");
+console.log("📝 Explicitly Allowed Origins:");
+ALLOWED_ORIGINS.forEach((origin, i) => console.log(`   ${i + 1}. ${origin}`));
+console.log("=========================\n");
 
 const corsOptions = {
   origin: function (origin, callback) {
     console.log(`📡 CORS Request from: ${origin || 'NO ORIGIN'}`);
 
-    // Allow requests with no origin (mobile apps, Postman, etc.)
+    // Allow requests with no origin (mobile apps, Postman, curl, etc.)
     if (!origin) {
-      console.log("✅ No origin - allowing");
+      console.log("✅ No origin (server-to-server or tools) - allowing");
       return callback(null, true);
     }
 
-    // Allow all Vercel preview deployments automatically
-    if (origin.includes("voicefrontend-b3te") && origin.includes("vercel.app")) {
-      console.log("✅ Vercel deployment - allowing");
+    // Check against explicit allowed origins from env FIRST
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      console.log("✅ Explicitly allowed origin from CORS_ORIGIN env");
+      return callback(null, true);
+    }
+
+    // Allow all Vercel preview deployments with voicefrontend
+    if (origin.includes("voicefrontend") && origin.includes("vercel.app")) {
+      console.log("✅ Vercel voicefrontend deployment - allowing");
       return callback(null, true);
     }
 
@@ -58,29 +74,24 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    // Check against explicit allowed origins from env
-    const ALLOWED_ORIGINS = process.env.CORS_ORIGIN
-      ? process.env.CORS_ORIGIN.split(",").map((o) => o.trim())
-      : [];
-
-    if (ALLOWED_ORIGINS.includes(origin)) {
-      console.log("✅ Explicitly allowed origin");
-      return callback(null, true);
-    }
-
     console.error(`❌ Origin BLOCKED: ${origin}`);
+    console.error(`❌ Not in allowed list: ${ALLOWED_ORIGINS.join(', ')}`);
     callback(new Error(`Not allowed by CORS: ${origin}`));
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
   exposedHeaders: ["Content-Range", "X-Content-Range"],
-  maxAge: 600, // Cache preflight for 10 minutes
+  maxAge: 86400, // Cache preflight for 24 hours (reduces OPTIONS calls)
+  preflightContinue: false,
+  optionsSuccessStatus: 204 // For legacy browser support
 };
 
 // Apply CORS BEFORE other middleware
 app.use(cors(corsOptions));
-app.options(/.*/, cors(corsOptions));
+
+// Handle preflight requests explicitly for ALL routes
+app.options("*", cors(corsOptions));
 
 // ============================================
 // 📦 OTHER MIDDLEWARE
@@ -91,6 +102,8 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 // Request logging middleware
 app.use((req, res, next) => {
   console.log(`📨 ${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log(`   Origin: ${req.headers.origin || 'No origin'}`);
+  console.log(`   User-Agent: ${req.headers['user-agent']?.substring(0, 50) || 'Unknown'}...`);
   next();
 });
 
@@ -118,7 +131,8 @@ app.get("/health", (req, res) => {
     status: "OK",
     timestamp: new Date().toISOString(),
     message: "Server is running perfectly! 🚀",
-    cors: "All Vercel deployments allowed",
+    cors: "All Vercel deployments + explicit origins allowed",
+    allowedOrigins: ALLOWED_ORIGINS.length,
   });
 });
 
@@ -185,6 +199,29 @@ app.use((req, res) => {
   });
 });
 
+// ============================================
+// 🚨 ERROR HANDLER - Catch CORS errors
+// ============================================
+app.use((err, req, res, next) => {
+  console.error("🚨 Error:", err.message);
+  
+  if (err.message.includes('Not allowed by CORS')) {
+    return res.status(403).json({
+      success: false,
+      error: 'CORS Error',
+      message: err.message,
+      origin: req.headers.origin,
+      hint: 'This origin is not in the allowed list. Check CORS_ORIGIN environment variable.'
+    });
+  }
+  
+  res.status(500).json({
+    success: false,
+    error: 'Internal Server Error',
+    message: err.message
+  });
+});
+
 // 🏢 Start server
 app.listen(port, () => {
   console.log(`
@@ -193,7 +230,7 @@ app.listen(port, () => {
   🌐 Port: ${port}
   💚 Health: http://localhost:${port}/health
   📋 Metadata: http://localhost:${port}/api/metadata
-  🛡️  CORS: Vercel + Localhost allowed
+  🛡️  CORS: ${ALLOWED_ORIGINS.length} explicit origins + Vercel + Localhost
   ===================================
   
   📍 Available Routes:
