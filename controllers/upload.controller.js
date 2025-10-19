@@ -1,5 +1,5 @@
 // ============================================
-// UPLOAD.CONTROLLER.JS - MINIMAL VERSION
+// UPLOAD.CONTROLLER.JS - ULTRA MINIMAL
 // ============================================
 
 import { promises as fsp } from "fs";
@@ -13,65 +13,59 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.REACT_APP_SUPABASE_
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY; 
 
 if (!JWT_SECRET || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    console.error("CRITICAL: Missing Supabase environment variables!");
+    console.error("CRITICAL: Missing environment variables!");
     process.exit(1); 
 }
 
 const extractUserIdFromToken = (req) => {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return null;
-    }
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
     const token = authHeader.split(' ')[1];
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         return decoded.sub; 
     } catch (err) {
-        console.warn("❌ JWT Verification Failed:", err.message);
+        console.warn("❌ JWT Failed:", err.message);
         return null;
     }
 };
 
 export const uploadVideo = async (req, res) => {
   let uploadedFilePath = null;
-  let userToken = null; 
 
   try {
-    console.log("📥 Upload request received");
-    
     const authHeader = req.headers.authorization;
-    if (authHeader) userToken = authHeader.split(' ')[1]; 
-    
+    const userToken = authHeader ? authHeader.split(' ')[1] : null;
     const userId = extractUserIdFromToken(req); 
     
     if (!userId || !userToken) {
         return res.status(401).json({
             success: false,
-            error: "Authentication failed. Invalid or missing token."
+            error: "Authentication failed"
         });
     }
-    
-    console.log("👤 User ID:", userId);
     
     const file = req.file;
     if (!file) { 
         return res.status(400).json({ 
             success: false, 
-            error: "No file uploaded." 
+            error: "No file uploaded" 
         }); 
     }
 
     uploadedFilePath = file.path;
     const fileBuffer = await fsp.readFile(file.path);
     
-    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
-    const randomId = Math.random().toString(36).substring(2, 15);
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(2, 9);
     const fileExtension = path.extname(file.originalname);
-    const sanitizedName = path.basename(file.originalname, fileExtension).replace(/[^a-zA-Z0-9-._]/g, '_');
+    const sanitizedName = path.basename(file.originalname, fileExtension)
+        .replace(/[^a-zA-Z0-9-._]/g, '_')
+        .substring(0, 50);
     const renamedFilename = `${timestamp}-${randomId}-${sanitizedName}${fileExtension}`;
     const storagePath = `videos/${renamedFilename}`;
     
-    console.log("📤 Uploading to Supabase Storage...");
+    // Upload to storage
     const { error: uploadError } = await supabase.storage
         .from("projectai")
         .upload(storagePath, fileBuffer, {
@@ -80,13 +74,13 @@ export const uploadVideo = async (req, res) => {
         });
 
     if (uploadError) { 
-        console.error("❌ Storage upload failed:", uploadError);
+        console.error("❌ Storage failed:", uploadError);
         if (uploadedFilePath) {
             try { await fsp.unlink(uploadedFilePath); } catch (e) {}
         }
         return res.status(500).json({ 
             success: false, 
-            error: "Upload to Supabase Storage failed", 
+            error: "Storage upload failed", 
             details: uploadError.message 
         });
     }
@@ -96,82 +90,60 @@ export const uploadVideo = async (req, res) => {
         .getPublicUrl(storagePath);
     const publicUrl = publicUrlData?.publicUrl || null;
 
-    console.log("🔐 Creating authenticated client...");
-    const authenticatedDbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        global: {
-            headers: {
-                Authorization: `Bearer ${userToken}`,
-            },
-        },
+    // Create authenticated client
+    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: { headers: { Authorization: `Bearer ${userToken}` } }
     });
     
-    console.log("💾 Saving metadata to database...");
-    
-    // MINIMAL PAYLOAD - Only core fields
-    const insertPayload = {
+    // ABSOLUTE MINIMAL PAYLOAD
+    const payload = {
       user_id: userId,
       video_name: renamedFilename,
       file_name: file.originalname,
       original_name: file.originalname,
-      title: file.originalname,
-      video_url: publicUrl,
+      bucket_path: storagePath,
       public_url: publicUrl,
       file_size: fileBuffer.length,
-      file_type: file.mimetype,
-      mime_type: file.mimetype,
-      bucket_path: storagePath,
-      processing_status: 'uploaded'
+      mime_type: file.mimetype
     };
 
-    console.log("📝 Inserting payload:", JSON.stringify(insertPayload, null, 2));
+    console.log("💾 Inserting:", payload);
 
-    const { data: insertData, error: insertError } = await authenticatedDbClient
+    const { data, error } = await authClient
       .from("metadata")
-      .insert([insertPayload]) 
+      .insert([payload]) 
       .select();
 
-    if (insertError) {
-      console.error("❌ Database insert failed:", insertError);
-      console.error("Full error object:", JSON.stringify(insertError, null, 2));
+    if (error) {
+      console.error("❌ DB insert failed:", error);
       
       // Cleanup storage
       try {
         await supabase.storage.from("projectai").remove([storagePath]);
-        console.log("🗑️ Cleaned up storage file");
-      } catch (cleanupErr) {
-        console.warn("⚠️ Failed to cleanup storage:", cleanupErr);
-      }
+      } catch (e) {}
       
-      // Cleanup temp file
       if (uploadedFilePath) {
-        try { 
-            await fsp.unlink(uploadedFilePath); 
-            console.log("🗑️ Cleaned up temp file");
-        } catch (e) {}
+        try { await fsp.unlink(uploadedFilePath); } catch (e) {}
       }
       
       return res.status(500).json({
         success: false,
-        error: "Failed to save metadata to database",
-        details: insertError.message,
-        hint: insertError.hint,
-        code: insertError.code,
-        fullError: insertError
+        error: "Database insert failed",
+        details: error.message,
+        code: error.code,
+        hint: error.hint
       });
     }
 
-    // Cleanup temp file on success
+    // Success cleanup
     await fsp.unlink(uploadedFilePath);
     
-    console.log("✅ Upload successful! Metadata ID:", insertData[0]?.id);
+    console.log("✅ Success! ID:", data[0]?.id);
     
     return res.status(200).json({
       success: true,
-      message: "Video uploaded successfully!",
-      metadata: { 
-          id: insertData[0]?.id, 
-          originalName: file.originalname 
-      },
+      message: "Upload successful",
+      metadata: { id: data[0]?.id },
       publicUrl: publicUrl,
       videoName: renamedFilename
     });
@@ -181,14 +153,11 @@ export const uploadVideo = async (req, res) => {
       try { await fsp.unlink(uploadedFilePath); } catch (e) {}
     }
     
-    console.error("💥 Server error:", err);
-    console.error("Stack trace:", err.stack);
-    
+    console.error("💥 Error:", err);
     return res.status(500).json({
       success: false,
-      error: "Server error during upload",
-      details: err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      error: "Server error",
+      details: err.message
     });
   }
 };
