@@ -1,4 +1,4 @@
-// supabaseClient.js
+// supabaseClient.js - FINAL FIXED VERSION
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -9,7 +9,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.error('❌ Missing Supabase environment variables! Check .env file.');
 }
 
-// CRITICAL: Client initialized with the Anon Key for RLS enforcement
 const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
@@ -30,13 +29,13 @@ export const getCurrentUser = async () => {
   }
 };
 
-// 🔑 FIXED: Returns auth object or NULL, no longer throws on unauthenticated state.
+// CRITICAL FIX: Gracefully returns null if no session is found, preventing crashes.
 export const getAuthHeaders = async () => {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     
     if (!session?.access_token) {
-      // If no token, return null so calling function can handle unauthenticated state
+      // If no token, return null, DO NOT THROW.
       return null; 
     }
     
@@ -45,8 +44,8 @@ export const getAuthHeaders = async () => {
     };
   } catch (error) {
     console.error('Get auth headers error:', error);
-    // If a critical error occurs (e.g., network), still return null.
-    return null;
+    // If retrieval fails for any reason, return null.
+    return null; 
   }
 };
 
