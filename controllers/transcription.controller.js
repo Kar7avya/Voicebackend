@@ -1,5 +1,6 @@
-// controllers/transcription.controller.js - FIXED VERSION
-// "We convert audio/video to text using AI services!"
+// ============================================
+// TRANSCRIPTION.CONTROLLER.JS - FIXED WITH AUTH
+// ============================================
 
 import fs, { promises as fsp } from "fs";
 import path from "path";
@@ -7,7 +8,8 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { fileURLToPath } from "url";
 import { Blob } from "buffer";
-import { supabase } from '../config/database.js';
+import { createClient } from '@supabase/supabase-js';
+import jwt from 'jsonwebtoken';
 import { elevenlabs, deepgram } from '../config/clients.js';
 import { PAUSE_THRESHOLD } from '../utils/constants.js';
 
@@ -15,7 +17,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const execPromise = promisify(exec);
 
-// WORKER 1: Transcribe with Deepgram (FIXED VERSION)
+// Environment variables
+const JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY;
+
+if (!JWT_SECRET || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.error("CRITICAL: Missing Supabase environment variables!");
+}
+
+// Extract user ID from JWT token
+const extractUserIdFromToken = (req) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+    const token = authHeader.split(' ')[1];
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        return decoded.sub;
+    } catch (err) {
+        console.warn("❌ JWT Verification Failed:", err.message);
+        return null;
+    }
+};
+
+// WORKER 1: Transcribe with Deepgram (WITH AUTH)
 export const transcribeWithDeepgram = async (req, res) => {
     const { videoName } = req.body;
 
@@ -26,40 +51,76 @@ export const transcribeWithDeepgram = async (req, res) => {
     
     console.log(`🎤 Deepgram Worker: Starting transcription for ${videoName}`);
 
+    // ✅ AUTHENTICATION CHECK
+    const authHeader = req.headers.authorization;
+    const userToken = authHeader ? authHeader.split(' ')[1] : null;
+    const userId = extractUserIdFromToken(req);
+    
+    if (!userId || !userToken) {
+        console.log("❌ Deepgram Worker: Authentication failed");
+        return res.status(401).json({ 
+            error: "Authentication failed. Please log in." 
+        });
+    }
+
+    console.log(`👤 Deepgram Worker: User ID: ${userId}`);
+
     const videoPath = path.join(__dirname, "../uploads", videoName);
     const audioPath = path.join(__dirname, "../uploads", `audio_for_deepgram_${Date.now()}.mp3`);
 
     try {
-        // Find the metadata record for this video
-        let { data: metadataRows, error: metadataError } = await supabase
+        // ✅ CREATE AUTHENTICATED CLIENT
+        const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            global: { 
+                headers: { 
+                    Authorization: `Bearer ${userToken}` 
+                } 
+            }
+        });
+
+        // Find the metadata record WITH USER CHECK
+        console.log(`🔍 Deepgram Worker: Looking for video: ${videoName}, user: ${userId}`);
+        
+        let { data: metadataRows, error: metadataError } = await authClient
             .from("metadata")
-            .select("id")
+            .select("*")
             .eq("video_name", videoName)
+            .eq("user_id", userId)
             .limit(1);
 
         if (metadataError) {
             console.log("❌ Deepgram Worker: Database error", metadataError);
-            return res.status(500).json({ error: "Database error: " + metadataError.message });
+            return res.status(500).json({ 
+                error: "Database error: " + metadataError.message 
+            });
         }
 
         if (!metadataRows || metadataRows.length === 0) {
-            console.log("❌ Deepgram Worker: No metadata found for video");
-            return res.status(404).json({ error: "No metadata entry found for this video" });
+            console.log("❌ Deepgram Worker: No metadata found for this video");
+            return res.status(404).json({ 
+                error: "No metadata entry found for this video",
+                videoName: videoName,
+                userId: userId
+            });
         }
 
-        const metadataId = metadataRows[0].id;
+        const metadata = metadataRows[0];
+        const metadataId = metadata.id;
         console.log(`📋 Deepgram Worker: Found metadata ID: ${metadataId}`);
 
         console.log("☁️ Deepgram Worker: Downloading video from cloud storage...");
         
-        // Download video from cloud storage
-        const { data, error: downloadError } = await supabase.storage
+        // Download video using authenticated client
+        const bucketPath = metadata.bucket_path || `videos/${videoName}`;
+        const { data, error: downloadError } = await authClient.storage
             .from("projectai")
-            .download(`videos/${videoName}`);
+            .download(bucketPath);
 
         if (downloadError) {
             console.log("❌ Deepgram Worker: Failed to download video", downloadError);
-            return res.status(500).json({ error: "Failed to download video from Supabase: " + downloadError.message });
+            return res.status(500).json({ 
+                error: "Failed to download video from Supabase: " + downloadError.message 
+            });
         }
 
         // Save video temporarily
@@ -77,7 +138,9 @@ export const transcribeWithDeepgram = async (req, res) => {
         } catch (ffmpegError) {
             console.log("❌ Deepgram Worker: FFmpeg error", ffmpegError);
             await fsp.unlink(videoPath).catch(() => {});
-            return res.status(500).json({ error: "Audio extraction failed: " + ffmpegError.message });
+            return res.status(500).json({ 
+                error: "Audio extraction failed: " + ffmpegError.message 
+            });
         }
 
         // Verify audio file was created
@@ -101,7 +164,7 @@ export const transcribeWithDeepgram = async (req, res) => {
             const { result, error: deepgramError } = await deepgram.listen.prerecorded.transcribeFile(
                 audioBuffer,
                 {
-                    model: "nova-3",
+                    model: "nova-2",
                     smart_format: true,
                     disfluencies: true,
                     punctuate: true,
@@ -143,13 +206,14 @@ export const transcribeWithDeepgram = async (req, res) => {
 
             console.log("💾 Deepgram Worker: Saving transcript to database...");
 
-            // Save to database
-            const { error: updateError } = await supabase
+            // Save to database using authenticated client
+            const { error: updateError } = await authClient
                 .from("metadata")
                 .update({
                     deepgram_transcript: transcript,
                     deepgram_words: allWords,
-                    transcription_completed_at: new Date().toISOString()
+                    transcription_completed_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
                 })
                 .eq("id", metadataId);
 
@@ -165,6 +229,7 @@ export const transcribeWithDeepgram = async (req, res) => {
             await fsp.unlink(videoPath).catch(e => console.log("Warning: Could not delete video file", e));
 
             res.json({ 
+                success: true,
                 message: "Transcription completed successfully",
                 transcript, 
                 wordCount: allWords.length,
@@ -198,7 +263,7 @@ export const transcribeWithDeepgram = async (req, res) => {
     }
 };
 
-// WORKER 2: Transcribe with ElevenLabs (FIXED VERSION)
+// WORKER 2: Transcribe with ElevenLabs (WITH AUTH)
 export const transcribeWithElevenLabs = async (req, res) => {
     const { videoName } = req.body;
     
@@ -209,20 +274,68 @@ export const transcribeWithElevenLabs = async (req, res) => {
 
     console.log(`🎙️ ElevenLabs Worker: Starting transcription for ${videoName}`);
 
+    // ✅ AUTHENTICATION CHECK
+    const authHeader = req.headers.authorization;
+    const userToken = authHeader ? authHeader.split(' ')[1] : null;
+    const userId = extractUserIdFromToken(req);
+    
+    if (!userId || !userToken) {
+        console.log("❌ ElevenLabs Worker: Authentication failed");
+        return res.status(401).json({ 
+            error: "Authentication failed. Please log in." 
+        });
+    }
+
+    console.log(`👤 ElevenLabs Worker: User ID: ${userId}`);
+
     const videoPath = path.join(__dirname, "../uploads", videoName);
     const audioPath = path.join(__dirname, "../uploads", `audio_for_11labs_${Date.now()}.mp3`);
 
     try {
+        // ✅ CREATE AUTHENTICATED CLIENT
+        const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            global: { 
+                headers: { 
+                    Authorization: `Bearer ${userToken}` 
+                } 
+            }
+        });
+
+        // Find metadata WITH USER CHECK
+        console.log(`🔍 ElevenLabs Worker: Looking for video: ${videoName}, user: ${userId}`);
+        
+        const { data: metadataRows, error: metadataError } = await authClient
+            .from("metadata")
+            .select("*")
+            .eq("video_name", videoName)
+            .eq("user_id", userId)
+            .limit(1);
+
+        if (metadataError || !metadataRows || metadataRows.length === 0) {
+            console.log("❌ ElevenLabs Worker: No metadata found");
+            return res.status(404).json({ 
+                error: "No metadata entry found for this video",
+                videoName: videoName,
+                userId: userId
+            });
+        }
+
+        const metadata = metadataRows[0];
+        console.log(`📋 ElevenLabs Worker: Found metadata ID: ${metadata.id}`);
+
         console.log("☁️ ElevenLabs Worker: Downloading video...");
         
-        // Download video from cloud storage
-        const { data, error: downloadError } = await supabase.storage
+        // Download video using authenticated client
+        const bucketPath = metadata.bucket_path || `videos/${videoName}`;
+        const { data, error: downloadError } = await authClient.storage
             .from("projectai")
-            .download(`videos/${videoName}`);
+            .download(bucketPath);
 
         if (downloadError) {
             console.log("❌ ElevenLabs Worker: Download failed", downloadError);
-            return res.status(500).json({ error: "Failed to download video from Supabase: " + downloadError.message });
+            return res.status(500).json({ 
+                error: "Failed to download video from Supabase: " + downloadError.message 
+            });
         }
 
         // Save video temporarily
@@ -240,7 +353,9 @@ export const transcribeWithElevenLabs = async (req, res) => {
         } catch (ffmpegError) {
             console.log("❌ ElevenLabs Worker: FFmpeg error", ffmpegError);
             await fsp.unlink(videoPath).catch(() => {});
-            return res.status(500).json({ error: "Audio extraction failed: " + ffmpegError.message });
+            return res.status(500).json({ 
+                error: "Audio extraction failed: " + ffmpegError.message 
+            });
         }
 
         // Check if audio file was created
@@ -305,6 +420,21 @@ export const transcribeWithElevenLabs = async (req, res) => {
                 console.log("⚠️ ElevenLabs Worker: Empty transcription result");
             }
 
+            console.log("💾 ElevenLabs Worker: Saving to database...");
+
+            // Save to database using authenticated client
+            const { error: updateError } = await authClient
+                .from("metadata")
+                .update({
+                    elevenlabs_transcript: elevenLabsTranscript,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", metadata.id);
+
+            if (updateError) {
+                console.warn("⚠️ ElevenLabs Worker: Failed to update metadata", updateError);
+            }
+
             console.log("✅ ElevenLabs Worker: Transcription completed!");
             
             // Clean up temporary files before sending response
@@ -312,6 +442,7 @@ export const transcribeWithElevenLabs = async (req, res) => {
             await fsp.unlink(videoPath).catch(e => console.log("Warning: Could not delete video file", e));
 
             res.json({ 
+                success: true,
                 message: "ElevenLabs transcription completed",
                 transcript: elevenLabsTranscript,
                 wordCount: wordCount,
@@ -349,17 +480,38 @@ export const transcribeWithElevenLabs = async (req, res) => {
     }
 };
 
-// HELPER: Get transcription status for a video
+// HELPER: Get transcription status for a video (WITH AUTH)
 export const getTranscriptionStatus = async (req, res) => {
     try {
         const { videoName } = req.params;
         
         console.log(`📋 Transcription Status Worker: Checking ${videoName}`);
 
-        const { data, error } = await supabase
+        // ✅ AUTHENTICATION CHECK
+        const authHeader = req.headers.authorization;
+        const userToken = authHeader ? authHeader.split(' ')[1] : null;
+        const userId = extractUserIdFromToken(req);
+        
+        if (!userId || !userToken) {
+            return res.status(401).json({ 
+                error: "Authentication required" 
+            });
+        }
+
+        // ✅ CREATE AUTHENTICATED CLIENT
+        const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            global: { 
+                headers: { 
+                    Authorization: `Bearer ${userToken}` 
+                } 
+            }
+        });
+
+        const { data, error } = await authClient
             .from("metadata")
             .select("deepgram_transcript, transcription_completed_at, video_name")
             .eq("video_name", videoName)
+            .eq("user_id", userId)
             .single();
 
         if (error) {
@@ -389,48 +541,3 @@ export const getTranscriptionStatus = async (req, res) => {
         });
     }
 };
-
-/*
-✅ KEY FIXES APPLIED TO BOTH WORKERS:
-
-ARCHITECTURE IMPROVEMENTS:
-1. ✅ Converted exec callback to promisify for better async/await flow
-2. ✅ Removed callback hell - now uses clean async/await throughout
-3. ✅ Proper error propagation with try/catch blocks
-4. ✅ File cleanup happens before response (prevents hanging)
-
-ERROR HANDLING:
-5. ✅ Added explicit checks for audio file creation
-6. ✅ Improved error logging with actual error objects
-7. ✅ Added client initialization checks (Deepgram & ElevenLabs)
-8. ✅ Database error handling with detailed messages
-9. ✅ Added stack traces for debugging
-
-DATA VALIDATION:
-10. ✅ Verify metadata exists before processing
-11. ✅ Check transcription results structure
-12. ✅ Handle empty transcription gracefully
-13. ✅ Added word count logging for monitoring
-
-FILE HANDLING:
-14. ✅ Changed Blob MIME type to "audio/mpeg" (standard)
-15. ✅ Proper file cleanup in all error paths
-16. ✅ Verify buffer conversion from Supabase storage
-
-DEBUGGING CHECKLIST:
-□ Check API keys: DEEPGRAM_API_KEY, ELEVENLABS_API_KEY
-□ Verify FFmpeg installed: `ffmpeg -version`
-□ Check uploads folder: exists + write permissions
-□ Verify client initialization in config/clients.js
-□ Check Supabase storage bucket permissions
-□ Monitor server logs for detailed error traces
-
-COMMON 500 ERROR CAUSES:
-1. Missing or invalid API keys
-2. FFmpeg not installed or not in PATH
-3. Uploads folder doesn't exist
-4. Insufficient disk space
-5. Client not initialized properly
-6. Network timeout to APIs
-7. Invalid video file format
-*/
