@@ -1,5 +1,5 @@
 // ============================================
-// UPLOAD.CONTROLLER.JS - COPY-PASTE READY
+// UPLOAD.CONTROLLER.JS - MINIMAL VERSION
 // ============================================
 
 import { promises as fsp } from "fs";
@@ -71,6 +71,7 @@ export const uploadVideo = async (req, res) => {
     const renamedFilename = `${timestamp}-${randomId}-${sanitizedName}${fileExtension}`;
     const storagePath = `videos/${renamedFilename}`;
     
+    console.log("📤 Uploading to Supabase Storage...");
     const { error: uploadError } = await supabase.storage
         .from("projectai")
         .upload(storagePath, fileBuffer, {
@@ -95,6 +96,7 @@ export const uploadVideo = async (req, res) => {
         .getPublicUrl(storagePath);
     const publicUrl = publicUrlData?.publicUrl || null;
 
+    console.log("🔐 Creating authenticated client...");
     const authenticatedDbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         global: {
             headers: {
@@ -104,6 +106,8 @@ export const uploadVideo = async (req, res) => {
     });
     
     console.log("💾 Saving metadata to database...");
+    
+    // MINIMAL PAYLOAD - Only core fields
     const insertPayload = {
       user_id: userId,
       video_name: renamedFilename,
@@ -116,26 +120,10 @@ export const uploadVideo = async (req, res) => {
       file_type: file.mimetype,
       mime_type: file.mimetype,
       bucket_path: storagePath,
-      processing_status: 'uploaded',
-      uploaded_at: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      description: null,
-      tags: null,
-      frames: [],
-      deepgram_words: {},
-      custom_metadata: {},
-      elevenlabs_transcript: null,
-      deepgram_transcript: null,
-      llm_analysis: null,
-      gemini_analysis: null,
-      frame_analysis: null,
-      gemini_frame_analysis: null,
-      error_message: null,
-      transcription_completed_at: null,
-      frame_extraction_completed_at: null,
-      analysis_completed_at: null
+      processing_status: 'uploaded'
     };
+
+    console.log("📝 Inserting payload:", JSON.stringify(insertPayload, null, 2));
 
     const { data: insertData, error: insertError } = await authenticatedDbClient
       .from("metadata")
@@ -144,15 +132,22 @@ export const uploadVideo = async (req, res) => {
 
     if (insertError) {
       console.error("❌ Database insert failed:", insertError);
+      console.error("Full error object:", JSON.stringify(insertError, null, 2));
       
+      // Cleanup storage
       try {
         await supabase.storage.from("projectai").remove([storagePath]);
+        console.log("🗑️ Cleaned up storage file");
       } catch (cleanupErr) {
         console.warn("⚠️ Failed to cleanup storage:", cleanupErr);
       }
       
+      // Cleanup temp file
       if (uploadedFilePath) {
-        try { await fsp.unlink(uploadedFilePath); } catch (e) {}
+        try { 
+            await fsp.unlink(uploadedFilePath); 
+            console.log("🗑️ Cleaned up temp file");
+        } catch (e) {}
       }
       
       return res.status(500).json({
@@ -160,13 +155,15 @@ export const uploadVideo = async (req, res) => {
         error: "Failed to save metadata to database",
         details: insertError.message,
         hint: insertError.hint,
-        code: insertError.code
+        code: insertError.code,
+        fullError: insertError
       });
     }
 
+    // Cleanup temp file on success
     await fsp.unlink(uploadedFilePath);
     
-    console.log("✅ Upload successful! ID:", insertData[0]?.id);
+    console.log("✅ Upload successful! Metadata ID:", insertData[0]?.id);
     
     return res.status(200).json({
       success: true,
@@ -185,10 +182,13 @@ export const uploadVideo = async (req, res) => {
     }
     
     console.error("💥 Server error:", err);
+    console.error("Stack trace:", err.stack);
+    
     return res.status(500).json({
       success: false,
       error: "Server error during upload",
-      details: err.message
+      details: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
     });
   }
 };
