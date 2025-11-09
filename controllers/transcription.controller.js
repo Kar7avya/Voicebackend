@@ -1105,7 +1105,8 @@ import dotenv from "dotenv";
 import fetch from "node-fetch";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createDeepgramClient } from "@deepgram/sdk";
-import { ElevenLabsClient } from "elevenlabs/api/index.js"; // ✅ fixed path for v1.59+
+import pkg from "elevenlabs/api/index.js"; // ✅ fixed CommonJS import
+const { ElevenLabsClient } = pkg; // ✅ destructure from default export
 
 dotenv.config();
 
@@ -1117,7 +1118,7 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 
 // === INITIALIZE CLIENTS ===
 const deepgram = createDeepgramClient(DEEPGRAM_API_KEY);
-const eleven = new ElevenLabsClient({ apiKey: ELEVENLABS_API_KEY }); // ✅ works with 1.59+
+const eleven = new ElevenLabsClient({ apiKey: ELEVENLABS_API_KEY }); // ✅ works for 1.59+
 
 /**
  * Create Supabase client using service role key
@@ -1200,7 +1201,6 @@ export const transcribeWithElevenLabs = async (videoUrl, videoName) => {
 
     console.log("💾 ElevenLabs transcript saved successfully for:", videoName);
     return { success: true, transcript: elevenLabsTranscript };
-
   } catch (err) {
     console.error("🚨 ElevenLabs transcription failed:", err);
     return { success: false, error: err.message };
