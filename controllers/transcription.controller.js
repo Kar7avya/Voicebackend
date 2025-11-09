@@ -1105,7 +1105,7 @@ import dotenv from "dotenv";
 import fetch from "node-fetch";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createDeepgramClient } from "@deepgram/sdk";
-import ElevenLabs from "elevenlabs";
+import elevenlabs from "elevenlabs"; // ✅ Correct import for v1.59+
 
 dotenv.config();
 
@@ -1117,11 +1117,10 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 
 // === INITIALIZE CLIENTS ===
 const deepgram = createDeepgramClient(DEEPGRAM_API_KEY);
-const elevenlabs = new ElevenLabs({ apiKey: ELEVENLABS_API_KEY });
+const eleven = elevenlabs({ apiKey: ELEVENLABS_API_KEY }); // ✅ FIXED
 
 /**
- * Create Supabase client using the service role key
- * (bypasses RLS safely for backend updates)
+ * Create Supabase client using service role key
  */
 const createServiceClient = () => {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -1155,7 +1154,7 @@ export const transcribeWithDeepgram = async (videoUrl, videoName) => {
 
     console.log("✅ Deepgram transcription completed successfully");
 
-    // 3️⃣ Extract transcript + word data
+    // 3️⃣ Extract transcript + words
     const transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || "";
     const allWords = result.results?.channels?.[0]?.alternatives?.[0]?.words || [];
 
@@ -1185,7 +1184,7 @@ export const transcribeWithDeepgram = async (videoUrl, videoName) => {
 };
 
 /**
- * TRANSCRIBE AUDIO WITH ELEVENLABS (optional)
+ * TRANSCRIBE AUDIO WITH ELEVENLABS (v1.59+ SDK)
  */
 export const transcribeWithElevenLabs = async (videoUrl, videoName) => {
   console.log("🧠 Starting ElevenLabs transcription for:", videoName);
@@ -1198,7 +1197,7 @@ export const transcribeWithElevenLabs = async (videoUrl, videoName) => {
     const buffer = await response.arrayBuffer();
 
     // 2️⃣ Send to ElevenLabs for transcription
-    const result = await elevenlabs.transcriptions.create({
+    const result = await eleven.transcriptions.create({
       file: buffer,
       model_id: "eleven_multilingual_v2",
     });
