@@ -1105,7 +1105,7 @@ import dotenv from "dotenv";
 import fetch from "node-fetch";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createDeepgramClient } from "@deepgram/sdk";
-import { ElevenLabs } from "elevenlabs"; // ✅ Correct for v1.59+
+import { ElevenLabsClient } from "elevenlabs/api"; // ✅ correct import for v1.59+
 
 dotenv.config();
 
@@ -1117,11 +1117,7 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 
 // === INITIALIZE CLIENTS ===
 const deepgram = createDeepgramClient(DEEPGRAM_API_KEY);
-
-// ✅ FIXED: Use ElevenLabs() factory (no 'new')
-const eleven = ElevenLabs({
-  apiKey: ELEVENLABS_API_KEY,
-});
+const eleven = new ElevenLabsClient({ apiKey: ELEVENLABS_API_KEY }); // ✅ FIXED
 
 /**
  * Create Supabase client using service role key
