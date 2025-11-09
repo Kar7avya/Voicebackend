@@ -1201,7 +1201,7 @@ export const transcribeWithDeepgram = async (videoUrl, videoName) => {
 /**
  * Optional: Process audio with ElevenLabs (for comparison / voice synthesis)
  */
-export const processWithElevenLabs = async (videoUrl, videoName) => {
+export const transcribeWithElevenLabs = async (videoUrl, videoName) => {
   console.log("🧠 Starting ElevenLabs processing for:", videoName);
   const serviceClient = createServiceClient();
 
