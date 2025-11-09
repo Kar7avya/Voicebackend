@@ -248,7 +248,16 @@ app.listen(port, () => {
   ✅ POST /api/extractFrames
   ✅ POST /api/transcribeWithDeepgram
   ===================================
+
+  
   `);
+
+console.log("Environment check:");
+console.log("SUPABASE_URL:", process.env.SUPABASE_URL ? "✅ Found" : "❌ Missing");
+console.log("SUPABASE_KEY:", process.env.SUPABASE_SERVICE_ROLE_KEY ? "✅ Found" : "❌ Missing");
+console.log("DEEPGRAM_API_KEY:", process.env.DEEPGRAM_API_KEY ? "✅ Found" : "❌ Missing");
+console.log("ELEVENLABS_API_KEY:", process.env.ELEVENLABS_API_KEY ? "✅ Found" : "❌ Missing");
+
 });
 
 export default app;

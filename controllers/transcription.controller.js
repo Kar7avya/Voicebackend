@@ -1105,40 +1105,159 @@ import dotenv from "dotenv";
 import fetch from "node-fetch";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createDeepgramClient } from "@deepgram/sdk";
-import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js"; // ✅ Official new SDK
+import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
+import jwt from "jsonwebtoken";
+import { Blob } from "buffer";
 
 dotenv.config();
 
 // === ENVIRONMENT VARIABLES ===
-const SUPABASE_URL = process.env.SUPABASE_URL;
+// Use fallback to REACT_APP_ variables if main variables are not set
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY;
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+const JWT_SECRET = process.env.SUPABASE_JWT_SECRET || process.env.JWT_SECRET;
+
+// === VALIDATE ENVIRONMENT VARIABLES ===
+if (!SUPABASE_URL) {
+  console.error("❌ CRITICAL: SUPABASE_URL is missing! Check your .env file.");
+  throw new Error("SUPABASE_URL environment variable is required");
+}
+
+if (!SUPABASE_SERVICE_ROLE_KEY) {
+  console.error("❌ CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing! Check your .env file.");
+  throw new Error("SUPABASE_SERVICE_ROLE_KEY environment variable is required");
+}
+
+if (!DEEPGRAM_API_KEY) {
+  console.error("⚠️ WARNING: DEEPGRAM_API_KEY is missing!");
+}
+
+if (!ELEVENLABS_API_KEY) {
+  console.error("⚠️ WARNING: ELEVENLABS_API_KEY is missing!");
+}
 
 // === INITIALIZE CLIENTS ===
-const deepgram = createDeepgramClient(DEEPGRAM_API_KEY);
+let deepgram = null;
+if (DEEPGRAM_API_KEY) {
+  try {
+    deepgram = createDeepgramClient(DEEPGRAM_API_KEY);
+    console.log("✅ Deepgram client initialized");
+  } catch (err) {
+    console.error("❌ Failed to initialize Deepgram client:", err.message);
+  }
+}
 
 /**
  * Create Supabase client using service role key
  */
 const createServiceClient = () => {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("supabaseUrl is required. Please check your .env file for SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY");
+  }
+  
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 };
 
 /**
- * TRANSCRIBE AUDIO WITH DEEPGRAM (v3 SDK)
+ * Extract user ID from JWT token
  */
-export const transcribeWithDeepgram = async (videoUrl, videoName) => {
+const extractUserIdFromToken = (req) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.split(' ')[1];
+  try {
+    if (!JWT_SECRET) {
+      console.warn("⚠️ JWT_SECRET not set, cannot verify token");
+      return null;
+    }
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return decoded.sub;
+  } catch (err) {
+    console.warn("❌ JWT Verification Failed:", err.message);
+    return null;
+  }
+};
+
+/**
+ * TRANSCRIBE AUDIO WITH DEEPGRAM (v3 SDK) - Express Handler
+ */
+export const transcribeWithDeepgram = async (req, res) => {
+  const { videoName } = req.body;
+
+  if (!videoName) {
+    return res.status(400).json({
+      success: false,
+      error: "Bad Request",
+      message: "videoName is required in request body"
+    });
+  }
+
+  // Authentication check
+  const userId = extractUserIdFromToken(req);
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: "Unauthorized",
+      message: "Authentication required. Please provide a valid authorization token."
+    });
+  }
+
   console.log("🎙️ Starting Deepgram transcription for:", videoName);
-  const serviceClient = createServiceClient();
 
   try {
+    // Create service client
+    const serviceClient = createServiceClient();
+
+    // Fetch video metadata to get public URL
+    const { data: metadata, error: metadataError } = await serviceClient
+      .from("metadata")
+      .select("public_url, video_name, user_id")
+      .eq("video_name", videoName)
+      .eq("user_id", userId)
+      .single();
+
+    if (metadataError || !metadata) {
+      console.error("❌ Metadata not found:", metadataError);
+      return res.status(404).json({
+        success: false,
+        error: "Not Found",
+        message: `Video with name "${videoName}" not found for this user`
+      });
+    }
+
+    const videoUrl = metadata.public_url;
+    if (!videoUrl) {
+      return res.status(400).json({
+        success: false,
+        error: "Bad Request",
+        message: "Video URL not found in metadata"
+      });
+    }
+
+    // Validate Deepgram client
+    if (!deepgram) {
+      return res.status(500).json({
+        success: false,
+        error: "Internal Server Error",
+        message: "Deepgram API key is not configured"
+      });
+    }
+
+    // Fetch video file
+    console.log("📥 Fetching video from URL:", videoUrl);
     const response = await fetch(videoUrl);
-    if (!response.ok) throw new Error(`Failed to fetch video: ${response.statusText}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch video: ${response.statusText}`);
+    }
     const buffer = await response.arrayBuffer();
 
+    // Transcribe with Deepgram
+    console.log("🎤 Sending to Deepgram API...");
     const { result } = await deepgram.listen.prerecorded.transcribeFile(buffer, {
       model: "nova-2",
       smart_format: true,
@@ -1151,7 +1270,9 @@ export const transcribeWithDeepgram = async (videoUrl, videoName) => {
     const transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || "";
     const allWords = result.results?.channels?.[0]?.alternatives?.[0]?.words || [];
 
-    await serviceClient
+    // Save transcript to database
+    console.log("💾 Saving transcript to database...");
+    const { error: updateError } = await serviceClient
       .from("metadata")
       .update({
         deepgram_transcript: transcript,
@@ -1159,57 +1280,162 @@ export const transcribeWithDeepgram = async (videoUrl, videoName) => {
         transcription_completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
-      .eq("video_name", videoName);
+      .eq("video_name", videoName)
+      .eq("user_id", userId);
+
+    if (updateError) {
+      console.error("❌ Failed to update metadata:", updateError);
+      return res.status(500).json({
+        success: false,
+        error: "Internal Server Error",
+        message: "Failed to save transcript to database",
+        details: updateError.message
+      });
+    }
 
     console.log("✅ Deepgram transcription complete for:", videoName);
-    return { success: true, transcript, words: allWords };
+    return res.status(200).json({
+      success: true,
+      message: "Transcription completed successfully",
+      transcript,
+      words: allWords,
+      wordCount: allWords.length
+    });
+
   } catch (err) {
     console.error("🚨 Deepgram transcription failed:", err);
-    return { success: false, error: err.message };
+    return res.status(500).json({
+      success: false,
+      error: "Internal Server Error",
+      message: err.message || "Transcription failed"
+    });
   }
 };
 
 /**
- * TRANSCRIBE AUDIO WITH ELEVENLABS (✅ Async/Await Official SDK Style)
+ * TRANSCRIBE AUDIO WITH ELEVENLABS - Express Handler
  */
-export const transcribeWithElevenLabs = async (videoUrl, videoName) => {
+export const transcribeWithElevenLabs = async (req, res) => {
+  const { videoName } = req.body;
+
+  if (!videoName) {
+    return res.status(400).json({
+      success: false,
+      error: "Bad Request",
+      message: "videoName is required in request body"
+    });
+  }
+
+  // Authentication check
+  const userId = extractUserIdFromToken(req);
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: "Unauthorized",
+      message: "Authentication required. Please provide a valid authorization token."
+    });
+  }
+
   console.log("🧠 Starting ElevenLabs transcription for:", videoName);
-  const serviceClient = createServiceClient();
 
   try {
-    // Initialize ElevenLabs client inside async context (like official syntax)
+    // Create service client
+    const serviceClient = createServiceClient();
+
+    // Fetch video metadata to get public URL
+    const { data: metadata, error: metadataError } = await serviceClient
+      .from("metadata")
+      .select("public_url, video_name, user_id")
+      .eq("video_name", videoName)
+      .eq("user_id", userId)
+      .single();
+
+    if (metadataError || !metadata) {
+      console.error("❌ Metadata not found:", metadataError);
+      return res.status(404).json({
+        success: false,
+        error: "Not Found",
+        message: `Video with name "${videoName}" not found for this user`
+      });
+    }
+
+    const videoUrl = metadata.public_url;
+    if (!videoUrl) {
+      return res.status(400).json({
+        success: false,
+        error: "Bad Request",
+        message: "Video URL not found in metadata"
+      });
+    }
+
+    // Validate ElevenLabs API key
+    if (!ELEVENLABS_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: "Internal Server Error",
+        message: "ElevenLabs API key is not configured"
+      });
+    }
+
+    // Initialize ElevenLabs client
     const client = new ElevenLabsClient({
       apiKey: ELEVENLABS_API_KEY,
       environment: "https://api.elevenlabs.io",
     });
 
-    // Fetch the remote video/audio file
+    // Fetch video file
+    console.log("📥 Fetching video from URL:", videoUrl);
     const response = await fetch(videoUrl);
-    if (!response.ok) throw new Error(`Failed to fetch video: ${response.statusText}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch video: ${response.statusText}`);
+    }
     const audioBuffer = await response.arrayBuffer();
 
-    // Perform transcription using async/await (official SDK method)
+    // Transcribe with ElevenLabs
+    console.log("🎤 Sending to ElevenLabs API...");
     const result = await client.speechToText.convert({
-      file: new Blob([audioBuffer]), // SDK expects a Blob or File
-      model_id: "scribe_v1", // Official ElevenLabs STT model
+      file: new Blob([audioBuffer]),
+      model_id: "scribe_v1",
     });
 
     const transcript = result?.text || "";
     console.log("✅ ElevenLabs transcription completed successfully.");
 
-    // Save to Supabase
-    await serviceClient
+    // Save transcript to database
+    console.log("💾 Saving transcript to database...");
+    const { error: updateError } = await serviceClient
       .from("metadata")
       .update({
         elevenlabs_transcript: transcript,
         updated_at: new Date().toISOString(),
       })
-      .eq("video_name", videoName);
+      .eq("video_name", videoName)
+      .eq("user_id", userId);
+
+    if (updateError) {
+      console.error("❌ Failed to update metadata:", updateError);
+      return res.status(500).json({
+        success: false,
+        error: "Internal Server Error",
+        message: "Failed to save transcript to database",
+        details: updateError.message
+      });
+    }
 
     console.log("💾 ElevenLabs transcript saved successfully for:", videoName);
-    return { success: true, transcript };
+    return res.status(200).json({
+      success: true,
+      message: "Transcription completed successfully",
+      transcript,
+      service: "ElevenLabs"
+    });
+
   } catch (err) {
     console.error("🚨 ElevenLabs transcription failed:", err);
-    return { success: false, error: err.message };
+    return res.status(500).json({
+      success: false,
+      error: "Internal Server Error",
+      message: err.message || "Transcription failed"
+    });
   }
 };
