@@ -1105,7 +1105,7 @@ import dotenv from "dotenv";
 import fetch from "node-fetch";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createDeepgramClient } from "@deepgram/sdk";
-import { ElevenLabs } from "elevenlabs";
+import ElevenLabs from "elevenlabs";
 
 dotenv.config();
 
