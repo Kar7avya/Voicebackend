@@ -1105,9 +1105,7 @@ import dotenv from "dotenv";
 import fetch from "node-fetch";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createDeepgramClient } from "@deepgram/sdk";
-import ElevenLabsModule from "elevenlabs"; // ✅ Correct import for all environments
-
-const ElevenLabs = ElevenLabsModule.default || ElevenLabsModule; // ✅ Normalize import
+import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js"; // ✅ Official new SDK
 
 dotenv.config();
 
@@ -1119,7 +1117,6 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 
 // === INITIALIZE CLIENTS ===
 const deepgram = createDeepgramClient(DEEPGRAM_API_KEY);
-const eleven = new ElevenLabs({ apiKey: ELEVENLABS_API_KEY }); // ✅ Works now
 
 /**
  * Create Supabase client using service role key
@@ -1173,35 +1170,44 @@ export const transcribeWithDeepgram = async (videoUrl, videoName) => {
 };
 
 /**
- * TRANSCRIBE AUDIO WITH ELEVENLABS (v1.59+ SDK)
+ * TRANSCRIBE AUDIO WITH ELEVENLABS (✅ Async/Await Official SDK Style)
  */
 export const transcribeWithElevenLabs = async (videoUrl, videoName) => {
   console.log("🧠 Starting ElevenLabs transcription for:", videoName);
   const serviceClient = createServiceClient();
 
   try {
-    const response = await fetch(videoUrl);
-    if (!response.ok) throw new Error(`Failed to fetch video: ${response.statusText}`);
-    const buffer = await response.arrayBuffer();
-
-    const result = await eleven.transcriptions.create({
-      file: buffer,
-      model_id: "eleven_multilingual_v2",
+    // Initialize ElevenLabs client inside async context (like official syntax)
+    const client = new ElevenLabsClient({
+      apiKey: ELEVENLABS_API_KEY,
+      environment: "https://api.elevenlabs.io",
     });
 
-    const elevenLabsTranscript = result?.text || "";
-    console.log("✅ ElevenLabs transcription completed");
+    // Fetch the remote video/audio file
+    const response = await fetch(videoUrl);
+    if (!response.ok) throw new Error(`Failed to fetch video: ${response.statusText}`);
+    const audioBuffer = await response.arrayBuffer();
 
+    // Perform transcription using async/await (official SDK method)
+    const result = await client.speechToText.convert({
+      file: new Blob([audioBuffer]), // SDK expects a Blob or File
+      model_id: "scribe_v1", // Official ElevenLabs STT model
+    });
+
+    const transcript = result?.text || "";
+    console.log("✅ ElevenLabs transcription completed successfully.");
+
+    // Save to Supabase
     await serviceClient
       .from("metadata")
       .update({
-        elevenlabs_transcript: elevenLabsTranscript,
+        elevenlabs_transcript: transcript,
         updated_at: new Date().toISOString(),
       })
       .eq("video_name", videoName);
 
     console.log("💾 ElevenLabs transcript saved successfully for:", videoName);
-    return { success: true, transcript: elevenLabsTranscript };
+    return { success: true, transcript };
   } catch (err) {
     console.error("🚨 ElevenLabs transcription failed:", err);
     return { success: false, error: err.message };
