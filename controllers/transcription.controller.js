@@ -1102,78 +1102,64 @@
 // };
 
 import dotenv from "dotenv";
-import fs from "fs";
-import { createClient } from "@supabase/supabase-js";
-import { pipeline } from "stream";
-import util from "util";
-import path from "path";
 import fetch from "node-fetch";
-import { Deepgram } from "@deepgram/sdk";
+import { createClient } from "@supabase/supabase-js";
+import { createClient as createDeepgramClient } from "@deepgram/sdk";
 import { ElevenLabs } from "elevenlabs";
 
 dotenv.config();
 
-// Promisify pipeline for cleaner async/await handling
-const streamPipeline = util.promisify(pipeline);
-
-// Environment variables
+// === ENVIRONMENT VARIABLES ===
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 
-const deepgram = new Deepgram(DEEPGRAM_API_KEY);
+// === INITIALIZE CLIENTS ===
+const deepgram = createDeepgramClient(DEEPGRAM_API_KEY);
 const elevenlabs = new ElevenLabs({ apiKey: ELEVENLABS_API_KEY });
 
 /**
- * Create Supabase client using service-role key (bypasses RLS for backend updates)
+ * Create Supabase client using the service role key
+ * (bypasses RLS safely for backend updates)
  */
 const createServiceClient = () => {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
+    auth: { autoRefreshToken: false, persistSession: false },
   });
 };
 
 /**
- * Transcribe audio with Deepgram and save to Supabase
+ * TRANSCRIBE AUDIO WITH DEEPGRAM (v3 SDK)
  */
 export const transcribeWithDeepgram = async (videoUrl, videoName) => {
   console.log("🎙️ Starting Deepgram transcription for:", videoName);
   const serviceClient = createServiceClient();
 
   try {
-    // Fetch the video file from Supabase storage
+    // 1️⃣ Download file from Supabase
     const response = await fetch(videoUrl);
     if (!response.ok) throw new Error(`Failed to fetch video: ${response.statusText}`);
-
     const buffer = await response.arrayBuffer();
-    console.log("📦 Video file fetched, sending to Deepgram...");
+    console.log("📦 Video fetched — sending to Deepgram...");
 
-    // Transcribe using Deepgram
-    const { result, error } = await deepgram.transcription.preRecorded(
-      { buffer, mimetype: "audio/mp4" },
-      {
-        smart_format: true,
-        punctuate: true,
-        paragraphs: true,
-        model: "nova-2",
-        diarize: false,
-        detect_language: true,
-        filler_words: true,
-      }
-    );
+    // 2️⃣ Transcribe using Deepgram v3 SDK
+    const { result } = await deepgram.listen.prerecorded.transcribeFile(buffer, {
+      model: "nova-2",
+      smart_format: true,
+      punctuate: true,
+      paragraphs: true,
+      detect_language: true,
+      filler_words: true,
+    });
 
-    if (error) throw new Error(`Deepgram error: ${error.message}`);
     console.log("✅ Deepgram transcription completed successfully");
 
-    // Extract transcript + words
-    const transcript = result.results?.channels[0]?.alternatives[0]?.transcript || "";
-    const allWords = result.results?.channels[0]?.alternatives[0]?.words || [];
+    // 3️⃣ Extract transcript + word data
+    const transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || "";
+    const allWords = result.results?.channels?.[0]?.alternatives?.[0]?.words || [];
 
-    // ✅ Save transcript back to Supabase metadata table
+    // 4️⃣ Save to Supabase metadata table
     const { error: updateError } = await serviceClient
       .from("metadata")
       .update({
@@ -1185,8 +1171,8 @@ export const transcribeWithDeepgram = async (videoUrl, videoName) => {
       .eq("video_name", videoName);
 
     if (updateError) {
-      console.error("❌ Failed to update metadata with transcript:", updateError);
-      throw new Error("Failed to update metadata: " + updateError.message);
+      console.error("❌ Failed to update metadata:", updateError);
+      throw new Error(updateError.message);
     }
 
     console.log("💾 Transcript and words saved successfully for:", videoName);
@@ -1199,18 +1185,19 @@ export const transcribeWithDeepgram = async (videoUrl, videoName) => {
 };
 
 /**
- * Optional: Process audio with ElevenLabs (for comparison / voice synthesis)
+ * TRANSCRIBE AUDIO WITH ELEVENLABS (optional)
  */
 export const transcribeWithElevenLabs = async (videoUrl, videoName) => {
-  console.log("🧠 Starting ElevenLabs processing for:", videoName);
+  console.log("🧠 Starting ElevenLabs transcription for:", videoName);
   const serviceClient = createServiceClient();
 
   try {
+    // 1️⃣ Download video/audio
     const response = await fetch(videoUrl);
     if (!response.ok) throw new Error(`Failed to fetch video: ${response.statusText}`);
     const buffer = await response.arrayBuffer();
 
-    // Call ElevenLabs API (example: transcribe)
+    // 2️⃣ Send to ElevenLabs for transcription
     const result = await elevenlabs.transcriptions.create({
       file: buffer,
       model_id: "eleven_multilingual_v2",
@@ -1219,7 +1206,7 @@ export const transcribeWithElevenLabs = async (videoUrl, videoName) => {
     const elevenLabsTranscript = result?.text || "";
     console.log("✅ ElevenLabs transcription completed");
 
-    // ✅ Save to Supabase metadata
+    // 3️⃣ Save transcript to Supabase
     const { error: updateError } = await serviceClient
       .from("metadata")
       .update({
@@ -1229,8 +1216,8 @@ export const transcribeWithElevenLabs = async (videoUrl, videoName) => {
       .eq("video_name", videoName);
 
     if (updateError) {
-      console.error("❌ Failed to update metadata with ElevenLabs transcript:", updateError);
-      throw new Error("Failed to update metadata: " + updateError.message);
+      console.error("❌ Failed to update metadata:", updateError);
+      throw new Error(updateError.message);
     }
 
     console.log("💾 ElevenLabs transcript saved successfully for:", videoName);
