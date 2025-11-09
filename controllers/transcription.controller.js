@@ -1117,7 +1117,11 @@ const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 
 // === INITIALIZE CLIENTS ===
 const deepgram = createDeepgramClient(DEEPGRAM_API_KEY);
-const eleven = new ElevenLabs({ apiKey: ELEVENLABS_API_KEY }); // ✅ FIXED
+
+// ✅ FIXED: Use ElevenLabs() factory (no 'new')
+const eleven = ElevenLabs({
+  apiKey: ELEVENLABS_API_KEY,
+});
 
 /**
  * Create Supabase client using service role key
