@@ -20,6 +20,7 @@
     "child_process": "^1.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
+    "elevenlabs": "^1.59.0",
     "express": "^5.1.0",
     "express-rate-limit": "^8.0.1",
     "ffmpeg-static": "^5.2.0",
