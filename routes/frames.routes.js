@@ -3,18 +3,22 @@
 
 import express from 'express';
 import { extractFrames, analyzeAllFrames } from '../controllers/frames.controller.js';
-import { videoUpload } from '../middleware/upload.js';
-import Router from 'express';
+import multer from 'multer';
 
 // 🚦 Create frames traffic director
 const router = express.Router();
+
+// Create multer instance for handling form data (no file upload, just form fields)
+const upload = multer();
 
 // 📋 TRAFFIC RULES FOR FRAMES DEPARTMENT:
 
 // 🎬 Extract frames from video
 // POST /api/extractFrames
-router.post('/extractFrames', videoUpload.none(), extractFrames);
-//                            ^^^ Security guard (but no files uploaded, just form data)
+// Accepts both JSON (from express.json() global middleware) and FormData (from multer)
+router.post('/extractFrames', upload.none(), extractFrames);
+//                            ^^^ Handles FormData with { videoName: "..." }
+// Note: express.json() global middleware handles JSON, multer handles FormData
 
 // 🔍 Analyze all existing frames  
 // GET /api/analyzeAllFrames

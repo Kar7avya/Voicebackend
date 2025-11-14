@@ -1108,6 +1108,7 @@ import { createClient as createDeepgramClient } from "@deepgram/sdk";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import jwt from "jsonwebtoken";
 import { Blob } from "buffer";
+import { PAUSE_THRESHOLD } from '../utils/constants.js';
 
 dotenv.config();
 
@@ -1265,17 +1266,48 @@ export const transcribeWithDeepgram = async (req, res) => {
       paragraphs: true,
       detect_language: true,
       filler_words: true,
+      diarize: false,
     });
 
-    const transcript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || "";
     const allWords = result.results?.channels?.[0]?.alternatives?.[0]?.words || [];
+    console.log(`📊 Deepgram Worker: Processing ${allWords.length} words with pause detection`);
+
+    // Build transcript with pause detection
+    let transcriptWithPauses = "";
+    if (allWords.length > 0) {
+      const transcriptParts = [];
+      
+      for (let i = 0; i < allWords.length; i++) {
+        const word = allWords[i];
+        
+        // Check for pause before current word (except first word)
+        if (i > 0) {
+          const prevWord = allWords[i - 1];
+          const gap = word.start - prevWord.end;
+          
+          if (gap > PAUSE_THRESHOLD) {
+            transcriptParts.push(`[PAUSE:${gap.toFixed(2)}s]`);
+          }
+        }
+        
+        // Add the word
+        transcriptParts.push(word.word || word.punctuated_word || "");
+      }
+      
+      transcriptWithPauses = transcriptParts.join(" ");
+    } else {
+      // Fallback to plain transcript if no words array
+      transcriptWithPauses = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || "";
+    }
+
+    console.log(`✅ Deepgram Worker: Transcript generated with ${(transcriptWithPauses.match(/\[PAUSE:/g) || []).length} pauses detected`);
 
     // Save transcript to database
     console.log("💾 Saving transcript to database...");
     const { error: updateError } = await serviceClient
       .from("metadata")
       .update({
-        deepgram_transcript: transcript,
+        deepgram_transcript: transcriptWithPauses,
         deepgram_words: allWords,
         transcription_completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -1297,9 +1329,10 @@ export const transcribeWithDeepgram = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Transcription completed successfully",
-      transcript,
+      transcript: transcriptWithPauses,
       words: allWords,
-      wordCount: allWords.length
+      wordCount: allWords.length,
+      pauseCount: (transcriptWithPauses.match(/\[PAUSE:/g) || []).length
     });
 
   } catch (err) {
@@ -1398,15 +1431,54 @@ export const transcribeWithElevenLabs = async (req, res) => {
       model_id: "scribe_v1",
     });
 
-    const transcript = result?.text || "";
-    console.log("✅ ElevenLabs transcription completed successfully.");
+    let transcriptWithPauses = "";
+    let wordCount = 0;
+    let pauseCount = 0;
+
+    // Process ElevenLabs result to add pause markers
+    if (result?.words && Array.isArray(result.words) && result.words.length > 0) {
+      const words = result.words;
+      wordCount = words.length;
+      const transcriptParts = [];
+      
+      console.log(`📊 ElevenLabs Worker: Processing ${wordCount} words with pause detection`);
+      
+      for (let i = 0; i < words.length; i++) {
+        const word = words[i];
+        
+        // Check for pause before current word (except first word)
+        if (i > 0) {
+          const prevWord = words[i - 1];
+          const gap = (word.start || 0) - (prevWord.end || 0);
+          
+          if (gap > PAUSE_THRESHOLD) {
+            transcriptParts.push(`[PAUSE:${gap.toFixed(2)}s]`);
+            pauseCount++;
+          }
+        }
+        
+        // Add the word text
+        transcriptParts.push(word.text || "");
+      }
+      
+      transcriptWithPauses = transcriptParts.join(" ");
+    } else if (result?.text) {
+      // Fallback to plain text if no words array
+      transcriptWithPauses = result.text;
+      console.log("📝 ElevenLabs Worker: Using plain text result (no word-level timestamps)");
+    } else {
+      transcriptWithPauses = "";
+      console.warn("⚠️ ElevenLabs Worker: Empty transcription result");
+    }
+
+    console.log(`✅ ElevenLabs transcription completed with ${pauseCount} pauses detected.`);
 
     // Save transcript to database
     console.log("💾 Saving transcript to database...");
     const { error: updateError } = await serviceClient
       .from("metadata")
       .update({
-        elevenlabs_transcript: transcript,
+        elevenlabs_transcript: transcriptWithPauses,
         updated_at: new Date().toISOString(),
       })
       .eq("video_name", videoName)
@@ -1426,8 +1498,10 @@ export const transcribeWithElevenLabs = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Transcription completed successfully",
-      transcript,
-      service: "ElevenLabs"
+      transcript: transcriptWithPauses,
+      service: "ElevenLabs",
+      wordCount: wordCount,
+      pauseCount: pauseCount
     });
 
   } catch (err) {

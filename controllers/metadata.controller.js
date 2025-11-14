@@ -89,10 +89,12 @@ export const getMetadata = async (req, res) => {
             });
         }
 
-        // 3. QUERY WITH AUTHENTICATED CLIENT (RLS will automatically filter by user_id)
+        // 3. QUERY WITH AUTHENTICATED CLIENT - EXPLICITLY FILTER BY USER_ID
+        // This ensures unique metadata per user, even if RLS is not configured
         const { data, error } = await authClient
             .from('metadata')
             .select('*')
+            .eq('user_id', userId)  // Explicitly filter by user_id from JWT token
             .order('created_at', { ascending: false });
 
         if (error) {
@@ -155,11 +157,12 @@ export const getMetadataById = async (req, res) => {
             });
         }
 
-        // 4. QUERY WITH RLS
+        // 4. QUERY WITH EXPLICIT USER_ID FILTER
         const { data, error } = await authClient
             .from('metadata')
             .select('*')
             .eq('id', id)
+            .eq('user_id', userId)  // Explicitly filter by user_id to ensure user can only access their own data
             .single();
 
         if (error) {
@@ -235,11 +238,12 @@ export const updateMetadata = async (req, res) => {
             });
         }
 
-        // 5. UPDATE WITH RLS
+        // 5. UPDATE WITH EXPLICIT USER_ID FILTER
         const { data, error } = await authClient
             .from('metadata')
             .update(updates)
             .eq('id', id)
+            .eq('user_id', userId)  // Explicitly filter by user_id to ensure user can only update their own data
             .select()
             .single();
 
@@ -301,11 +305,12 @@ export const deleteMetadata = async (req, res) => {
             });
         }
 
-        // 4. CHECK IF EXISTS (RLS will filter by user automatically)
+        // 4. CHECK IF EXISTS WITH EXPLICIT USER_ID FILTER
         const { data: existingData } = await authClient
             .from('metadata')
             .select('id')
             .eq('id', id)
+            .eq('user_id', userId)  // Explicitly filter by user_id to ensure user can only delete their own data
             .single();
 
         if (!existingData) {
@@ -315,11 +320,12 @@ export const deleteMetadata = async (req, res) => {
             });
         }
         
-        // 5. DELETE WITH RLS
+        // 5. DELETE WITH EXPLICIT USER_ID FILTER
         const { error } = await authClient
             .from('metadata')
             .delete()
-            .eq('id', id);
+            .eq('id', id)
+            .eq('user_id', userId);  // Explicitly filter by user_id to ensure user can only delete their own data
 
         if (error) {
             console.error("❌ Delete failed:", error);
@@ -375,8 +381,8 @@ export const searchMetadata = async (req, res) => {
             });
         }
 
-        // 3. BUILD SEARCH QUERY (RLS will automatically filter by user_id)
-        let searchQuery = authClient.from('metadata').select('*');
+        // 3. BUILD SEARCH QUERY WITH EXPLICIT USER_ID FILTER
+        let searchQuery = authClient.from('metadata').select('*').eq('user_id', userId);  // Explicitly filter by user_id
 
         if (type === 'name') {
             searchQuery = searchQuery.or(`file_name.ilike.%${query}%,video_name.ilike.%${query}%`);

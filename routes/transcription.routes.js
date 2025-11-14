@@ -3,21 +3,26 @@
 
 import express from 'express';
 import { transcribeWithDeepgram, transcribeWithElevenLabs } from '../controllers/transcription.controller.js';
-import { videoUpload } from '../middleware/upload.js';
+import multer from 'multer';
 
 // 🚦 Create transcription traffic director
 const router = express.Router();
+
+// Create multer instance for handling form data (no file upload, just form fields)
+const upload = multer();
 
 // 📋 TRAFFIC RULES FOR TRANSCRIPTION DEPARTMENT:
 
 // 📝 Transcribe with Deepgram (high-quality service)
 // POST /api/transcribeWithDeepgram
-router.post('/transcribeWithDeepgram', videoUpload.none(), transcribeWithDeepgram);
-//                                     ^^^ Security guard checks form data (videoName)
+// Accepts both JSON (from express.json() global middleware) and FormData (from multer)
+router.post('/transcribeWithDeepgram', upload.none(), transcribeWithDeepgram);
+//                                     ^^^ Handles FormData with { videoName: "..." }
 
 // 🎤 Transcribe with ElevenLabs (alternative service)  
 // POST /api/transcribeWithElevenLabs
-router.post('/transcribeWithElevenLabs', videoUpload.none(), transcribeWithElevenLabs);
+// Accepts both JSON (from express.json() global middleware) and FormData (from multer)
+router.post('/transcribeWithElevenLabs', upload.none(), transcribeWithElevenLabs);
 
 // 📊 Future transcription routes you might add:
 // router.get('/transcripts/:videoId', getTranscript);           // Get saved transcript

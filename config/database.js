@@ -37,18 +37,23 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Debug: Check if environment variables are loaded
+// Try both SUPABASE_URL and REACT_APP_SUPABASE_URL for compatibility
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY;
+
 console.log("Environment check:");
-console.log("SUPABASE_URL:", process.env.REACT_APP_SUPABASE_URL ? "✅ Found" : "❌ Missing");
-console.log("SUPABASE_KEY:", process.env.REACT_APP_SUPABASE_ANON_KEY ? "✅ Found" : "❌ Missing");
+console.log("SUPABASE_URL:", SUPABASE_URL ? "✅ Found" : "❌ Missing");
+console.log("SUPABASE_ANON_KEY:", SUPABASE_ANON_KEY ? "✅ Found" : "❌ Missing");
+console.log("SUPABASE_SERVICE_ROLE_KEY:", process.env.SUPABASE_SERVICE_ROLE_KEY ? "✅ Found" : "❌ Missing");
 
 // Only create Supabase client if variables exist
-if (!process.env.REACT_APP_SUPABASE_URL || !process.env.REACT_APP_SUPABASE_ANON_KEY) {
-    throw new Error("Missing Supabase environment variables in .env file");
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error("Missing Supabase environment variables in .env file. Please set SUPABASE_URL and SUPABASE_ANON_KEY (or REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY)");
 }
 
 const supabase = createClient(
-    process.env.REACT_APP_SUPABASE_URL,
-    process.env.REACT_APP_SUPABASE_ANON_KEY
+    SUPABASE_URL,
+    SUPABASE_ANON_KEY
 );
 
 console.log("Database connection initialized: Supabase ready");

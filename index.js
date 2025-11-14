@@ -56,16 +56,17 @@ const corsOptions = {
       return callback(null, true);
     }
 
-    // Allow all Vercel voicefrontend deployments
+    // Allow all Vercel voicefrontend deployments (production deployments)
     if (origin.includes("voicefrontend") && origin.includes("vercel.app")) {
       console.log("✅ ALLOWING: Vercel voicefrontend deployment");
       console.log(`=====================================\n`);
       return callback(null, true);
     }
 
-    // Allow localhost
-    if (origin.includes("localhost") || origin.includes("127.0.0.1")) {
-      console.log("✅ ALLOWING: Localhost");
+    // Allow localhost only if explicitly enabled via environment variable
+    // Set ALLOW_LOCALHOST=true in .env to enable localhost in production
+    if (process.env.ALLOW_LOCALHOST === "true" && (origin.includes("localhost") || origin.includes("127.0.0.1"))) {
+      console.log("✅ ALLOWING: Localhost (explicitly enabled)");
       console.log(`=====================================\n`);
       return callback(null, true);
     }
@@ -96,10 +97,10 @@ app.use((req, res, next) => {
   console.log(`   Origin header: ${origin || 'none'}`);
   
   if (origin) {
+    const isLocalhost = process.env.ALLOW_LOCALHOST === "true" && (origin.includes("localhost") || origin.includes("127.0.0.1"));
     const isAllowed = ALLOWED_ORIGINS.includes(origin) || 
                      (origin.includes("voicefrontend") && origin.includes("vercel.app")) ||
-                     origin.includes("localhost") ||
-                     origin.includes("127.0.0.1");
+                     isLocalhost;
     
     if (isAllowed) {
       console.log(`   ✅ Setting CORS headers manually for: ${origin}`);
@@ -236,7 +237,7 @@ app.listen(port, () => {
   🌐 Port: ${port}
   💚 Health: http://localhost:${port}/health
   📋 Metadata: http://localhost:${port}/api/metadata
-  🛡️  CORS: ${ALLOWED_ORIGINS.length} explicit + Vercel + Localhost
+  🛡️  CORS: ${ALLOWED_ORIGINS.length} explicit origins + Vercel deployments${process.env.ALLOW_LOCALHOST === "true" ? " + Localhost" : ""}
   ===================================
   
   📍 Available Routes:

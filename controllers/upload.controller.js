@@ -11,11 +11,23 @@ import { createClient } from '@supabase/supabase-js';
 const JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY; 
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!JWT_SECRET || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
     console.error("CRITICAL: Missing environment variables!");
     process.exit(1); 
 }
+
+// Create service client for storage operations (bypasses RLS)
+const createServiceClient = () => {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+        // Fallback to regular supabase client if service role not available
+        return supabase;
+    }
+    return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { autoRefreshToken: false, persistSession: false }
+    });
+};
 
 const extractUserIdFromToken = (req) => {
     const authHeader = req.headers.authorization;
@@ -65,8 +77,9 @@ export const uploadVideo = async (req, res) => {
     const renamedFilename = `${timestamp}-${randomId}-${sanitizedName}${fileExtension}`;
     const storagePath = `videos/${renamedFilename}`;
     
-    // Upload to storage
-    const { error: uploadError } = await supabase.storage
+    // Upload to storage using service client (has proper permissions)
+    const serviceClient = createServiceClient();
+    const { error: uploadError } = await serviceClient.storage
         .from("projectai")
         .upload(storagePath, fileBuffer, {
             contentType: file.mimetype,
@@ -85,19 +98,18 @@ export const uploadVideo = async (req, res) => {
         });
     }
 
-    const { data: publicUrlData } = supabase.storage
+    const { data: publicUrlData } = serviceClient.storage
         .from("projectai")
         .getPublicUrl(storagePath);
     const publicUrl = publicUrlData?.publicUrl || null;
 
-    // Create authenticated client
-    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        global: { headers: { Authorization: `Bearer ${userToken}` } }
-    });
+    // Use service client for database insert to ensure it works even if RLS blocks authenticated inserts
+    // We explicitly set user_id from JWT token to ensure unique metadata per user
+    const dbServiceClient = createServiceClient();
     
-    // ABSOLUTE MINIMAL PAYLOAD
+    // ABSOLUTE MINIMAL PAYLOAD - user_id is extracted from JWT token
     const payload = {
-      user_id: userId,
+      user_id: userId,  // Explicitly set from JWT token - ensures unique metadata per user
       video_name: renamedFilename,
       file_name: file.originalname,
       original_name: file.originalname,
@@ -107,9 +119,16 @@ export const uploadVideo = async (req, res) => {
       mime_type: file.mimetype
     };
 
-    console.log("💾 Inserting:", payload);
+    console.log("💾 Inserting metadata for user:", userId);
+    console.log("💾 Payload (without user_id):", { 
+      video_name: payload.video_name,
+      file_name: payload.file_name,
+      bucket_path: payload.bucket_path,
+      file_size: payload.file_size,
+      mime_type: payload.mime_type
+    });  // Log payload without user_id for security
 
-    const { data, error } = await authClient
+    const { data, error } = await dbServiceClient
       .from("metadata")
       .insert([payload]) 
       .select();
@@ -117,10 +136,13 @@ export const uploadVideo = async (req, res) => {
     if (error) {
       console.error("❌ DB insert failed:", error);
       
-      // Cleanup storage
+      // Cleanup storage using service client
       try {
-        await supabase.storage.from("projectai").remove([storagePath]);
-      } catch (e) {}
+        const serviceClient = createServiceClient();
+        await serviceClient.storage.from("projectai").remove([storagePath]);
+      } catch (e) {
+        console.warn("⚠️ Could not cleanup storage:", e);
+      }
       
       if (uploadedFilePath) {
         try { await fsp.unlink(uploadedFilePath); } catch (e) {}
