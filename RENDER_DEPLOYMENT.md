@@ -8,9 +8,9 @@ When deploying to Render, you need to set the following environment variables in
 
 ```bash
 # Supabase Configuration
-SUPABASE_URL=https://lqewkooprqatcjoydwgb.supabase.co
+SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your_supabase_anon_key_here
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxxZXdrb29wcnFhdGNqb3lkd2diIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MzcxMjU3NywiZXhwIjoyMDY5Mjg4NTc3fQ.cODrap6N5J2LbhFpsZUo36n4Ife5DGSVWHly3bpsmLk
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
 SUPABASE_JWT_SECRET=your_jwt_secret_here
 
 # API Keys
@@ -23,14 +23,14 @@ PORT=10000
 # Note: Render automatically sets PORT, but you can override it if needed
 
 # CORS Configuration - Production Vercel URLs
-CORS_ORIGIN=https://voicefrontend-kappa.vercel.app,https://voicefrontend-git-development-karthavya-srivastavas-projects.vercel.app,https://voicefrontend-nxaqfw463-karthavya-srivastavas-projects.vercel.app,https://voicefrontend-karthavya-srivastavas-projects.vercel.app,https://voicefrontend-b3te.vercel.app,https://voicefrontend-b3te-git-main-karthavya-srivastavas-projects.vercel.app,https://voicefrontend-b3te-1k7sedhbd-karthavya-srivastavas-projects.vercel.app
+CORS_ORIGIN=https://your-frontend.vercel.app,https://your-frontend-git-main.vercel.app,http://localhost:3000
 
 # Localhost (disabled in production)
 # Set ALLOW_LOCALHOST=true only if you need local development
 # ALLOW_LOCALHOST=false
 
 # Frontend Configuration (for fallback)
-REACT_APP_SUPABASE_URL=https://lqewkooprqatcjoydwgb.supabase.co
+REACT_APP_SUPABASE_URL=https://your-project.supabase.co
 REACT_APP_SUPABASE_ANON_KEY=your_supabase_anon_key_here
 ```
 
