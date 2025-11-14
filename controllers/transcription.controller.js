@@ -1127,17 +1127,22 @@ if (!SUPABASE_URL) {
   throw new Error("SUPABASE_URL environment variable is required");
 }
 
+// Service role key is required for transcription, but don't crash server if missing
+// The createServiceClient function will handle the error gracefully
 if (!SUPABASE_SERVICE_ROLE_KEY) {
-  console.error("❌ CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing! Check your .env file.");
-  throw new Error("SUPABASE_SERVICE_ROLE_KEY environment variable is required");
+  console.error("⚠️ WARNING: SUPABASE_SERVICE_ROLE_KEY is missing!");
+  console.error("⚠️ Transcription features will not work without this key.");
+  console.error("⚠️ Please add SUPABASE_SERVICE_ROLE_KEY to your environment variables.");
 }
 
 if (!DEEPGRAM_API_KEY) {
   console.error("⚠️ WARNING: DEEPGRAM_API_KEY is missing!");
+  console.error("⚠️ Deepgram transcription will not work without this key.");
 }
 
 if (!ELEVENLABS_API_KEY) {
   console.error("⚠️ WARNING: ELEVENLABS_API_KEY is missing!");
+  console.error("⚠️ ElevenLabs transcription will not work without this key.");
 }
 
 // === INITIALIZE CLIENTS ===
@@ -1155,8 +1160,12 @@ if (DEEPGRAM_API_KEY) {
  * Create Supabase client using service role key
  */
 const createServiceClient = () => {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("supabaseUrl is required. Please check your .env file for SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY");
+  if (!SUPABASE_URL) {
+    throw new Error("supabaseUrl is required. Please check your .env file for SUPABASE_URL");
+  }
+  
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for transcription. Please add it to your environment variables in Render dashboard.");
   }
   
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -1259,7 +1268,7 @@ export const transcribeWithDeepgram = async (req, res) => {
 
     // Transcribe with Deepgram
     console.log("🎤 Sending to Deepgram API...");
-    const { result } = await deepgram.listen.prerecorded.transcribeFile(buffer, {
+    const deepgramResponse = await deepgram.listen.prerecorded.transcribeFile(buffer, {
       model: "nova-2",
       smart_format: true,
       punctuate: true,
@@ -1269,8 +1278,23 @@ export const transcribeWithDeepgram = async (req, res) => {
       diarize: false,
     });
 
+    // Check for errors in Deepgram response
+    if (deepgramResponse.error) {
+      console.error("❌ Deepgram API error:", deepgramResponse.error);
+      throw new Error(`Deepgram API error: ${JSON.stringify(deepgramResponse.error)}`);
+    }
+
+    const result = deepgramResponse.result;
+    if (!result || !result.results) {
+      console.error("❌ Deepgram returned null or invalid result:", deepgramResponse);
+      throw new Error("Deepgram API returned invalid response. Please check the audio file format.");
+    }
+
     const allWords = result.results?.channels?.[0]?.alternatives?.[0]?.words || [];
+    const plainTranscript = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || "";
+    
     console.log(`📊 Deepgram Worker: Processing ${allWords.length} words with pause detection`);
+    console.log(`📝 Plain transcript length: ${plainTranscript.length} characters`);
 
     // Build transcript with pause detection
     let transcriptWithPauses = "";
@@ -1283,24 +1307,32 @@ export const transcribeWithDeepgram = async (req, res) => {
         // Check for pause before current word (except first word)
         if (i > 0) {
           const prevWord = allWords[i - 1];
-          const gap = word.start - prevWord.end;
+          const gap = (word.start || 0) - (prevWord.end || 0);
           
           if (gap > PAUSE_THRESHOLD) {
             transcriptParts.push(`[PAUSE:${gap.toFixed(2)}s]`);
           }
         }
         
-        // Add the word
-        transcriptParts.push(word.word || word.punctuated_word || "");
+        // Add the word - try different word properties
+        const wordText = word.word || word.punctuated_word || word.text || "";
+        if (wordText) {
+          transcriptParts.push(wordText);
+        }
       }
       
       transcriptWithPauses = transcriptParts.join(" ");
-    } else {
+    } else if (plainTranscript) {
       // Fallback to plain transcript if no words array
-      transcriptWithPauses = result.results?.channels?.[0]?.alternatives?.[0]?.transcript || "";
+      transcriptWithPauses = plainTranscript;
+      console.log("⚠️ Using plain transcript (no word-level timestamps available)");
+    } else {
+      throw new Error("Deepgram returned empty transcript. The audio may be too short or contain no speech.");
     }
 
-    console.log(`✅ Deepgram Worker: Transcript generated with ${(transcriptWithPauses.match(/\[PAUSE:/g) || []).length} pauses detected`);
+    const pauseCount = (transcriptWithPauses.match(/\[PAUSE:/g) || []).length;
+    console.log(`✅ Deepgram Worker: Transcript generated with ${pauseCount} pauses detected`);
+    console.log(`📊 Final transcript: ${transcriptWithPauses.length} characters, ${allWords.length} words`);
 
     // Save transcript to database
     console.log("💾 Saving transcript to database...");
@@ -1332,7 +1364,7 @@ export const transcribeWithDeepgram = async (req, res) => {
       transcript: transcriptWithPauses,
       words: allWords,
       wordCount: allWords.length,
-      pauseCount: (transcriptWithPauses.match(/\[PAUSE:/g) || []).length
+      pauseCount: pauseCount
     });
 
   } catch (err) {
@@ -1426,83 +1458,119 @@ export const transcribeWithElevenLabs = async (req, res) => {
 
     // Transcribe with ElevenLabs
     console.log("🎤 Sending to ElevenLabs API...");
-    const result = await client.speechToText.convert({
-      file: new Blob([audioBuffer]),
-      model_id: "scribe_v1",
-    });
+    
+    // Create a proper Blob with correct MIME type
+    const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
+    
+    try {
+      // ElevenLabs SDK v2.22.0 - check if convert accepts options object or separate params
+      // Try with explicit model_id first
+      let result;
+      try {
+        result = await client.speechToText.convert(audioBlob, {
+          model_id: "scribe_v1"
+        });
+      } catch (paramError) {
+        // If that fails, try with options object
+        console.log("⚠️ Trying alternative API call format...");
+        result = await client.speechToText.convert({
+          file: audioBlob,
+          model_id: "scribe_v1"
+        });
+      }
 
-    let transcriptWithPauses = "";
-    let wordCount = 0;
-    let pauseCount = 0;
+      if (!result) {
+        throw new Error("ElevenLabs returned null response");
+      }
 
-    // Process ElevenLabs result to add pause markers
-    if (result?.words && Array.isArray(result.words) && result.words.length > 0) {
-      const words = result.words;
-      wordCount = words.length;
-      const transcriptParts = [];
-      
-      console.log(`📊 ElevenLabs Worker: Processing ${wordCount} words with pause detection`);
-      
-      for (let i = 0; i < words.length; i++) {
-        const word = words[i];
+      let transcriptWithPauses = "";
+      let wordCount = 0;
+      let pauseCount = 0;
+
+      // Process ElevenLabs result to add pause markers
+      if (result?.words && Array.isArray(result.words) && result.words.length > 0) {
+        const words = result.words;
+        wordCount = words.length;
+        const transcriptParts = [];
         
-        // Check for pause before current word (except first word)
-        if (i > 0) {
-          const prevWord = words[i - 1];
-          const gap = (word.start || 0) - (prevWord.end || 0);
+        console.log(`📊 ElevenLabs Worker: Processing ${wordCount} words with pause detection`);
+        
+        for (let i = 0; i < words.length; i++) {
+          const word = words[i];
           
-          if (gap > PAUSE_THRESHOLD) {
-            transcriptParts.push(`[PAUSE:${gap.toFixed(2)}s]`);
-            pauseCount++;
+          // Check for pause before current word (except first word)
+          if (i > 0) {
+            const prevWord = words[i - 1];
+            const gap = (word.start || 0) - (prevWord.end || 0);
+            
+            if (gap > PAUSE_THRESHOLD) {
+              transcriptParts.push(`[PAUSE:${gap.toFixed(2)}s]`);
+              pauseCount++;
+            }
           }
+          
+          // Add the word text
+          transcriptParts.push(word.text || "");
         }
         
-        // Add the word text
-        transcriptParts.push(word.text || "");
+        transcriptWithPauses = transcriptParts.join(" ");
+      } else if (result?.text) {
+        // Fallback to plain text if no words array
+        transcriptWithPauses = result.text;
+        wordCount = transcriptWithPauses.split(/\s+/).filter(w => w.length > 0).length;
+        console.log("📝 ElevenLabs Worker: Using plain text result (no word-level timestamps)");
+      } else {
+        throw new Error("ElevenLabs returned empty transcription result");
+      }
+
+      console.log(`✅ ElevenLabs transcription completed with ${pauseCount} pauses detected.`);
+      console.log(`📊 Transcript: ${transcriptWithPauses.length} characters, ${wordCount} words`);
+
+      // Save transcript to database
+      console.log("💾 Saving transcript to database...");
+      const { error: updateError } = await serviceClient
+        .from("metadata")
+        .update({
+          elevenlabs_transcript: transcriptWithPauses,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("video_name", videoName)
+        .eq("user_id", userId);
+
+      if (updateError) {
+        console.error("❌ Failed to update metadata:", updateError);
+        return res.status(500).json({
+          success: false,
+          error: "Internal Server Error",
+          message: "Failed to save transcript to database",
+          details: updateError.message
+        });
+      }
+
+      console.log("💾 ElevenLabs transcript saved successfully for:", videoName);
+      return res.status(200).json({
+        success: true,
+        message: "Transcription completed successfully",
+        transcript: transcriptWithPauses,
+        service: "ElevenLabs",
+        wordCount: wordCount,
+        pauseCount: pauseCount
+      });
+    } catch (elevenLabsError) {
+      console.error("❌ ElevenLabs API error:", elevenLabsError);
+      
+      // Check if it's an API error with details
+      if (elevenLabsError.message && elevenLabsError.message.includes("model_id")) {
+        return res.status(400).json({
+          success: false,
+          error: "Bad Request",
+          message: `ElevenLabs API error: ${elevenLabsError.message}. Please check the model_id parameter.`
+        });
       }
       
-      transcriptWithPauses = transcriptParts.join(" ");
-    } else if (result?.text) {
-      // Fallback to plain text if no words array
-      transcriptWithPauses = result.text;
-      console.log("📝 ElevenLabs Worker: Using plain text result (no word-level timestamps)");
-    } else {
-      transcriptWithPauses = "";
-      console.warn("⚠️ ElevenLabs Worker: Empty transcription result");
+      // Re-throw to be caught by outer catch
+      throw elevenLabsError;
     }
-
-    console.log(`✅ ElevenLabs transcription completed with ${pauseCount} pauses detected.`);
-
-    // Save transcript to database
-    console.log("💾 Saving transcript to database...");
-    const { error: updateError } = await serviceClient
-      .from("metadata")
-      .update({
-        elevenlabs_transcript: transcriptWithPauses,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("video_name", videoName)
-      .eq("user_id", userId);
-
-    if (updateError) {
-      console.error("❌ Failed to update metadata:", updateError);
-      return res.status(500).json({
-        success: false,
-        error: "Internal Server Error",
-        message: "Failed to save transcript to database",
-        details: updateError.message
-      });
-    }
-
-    console.log("💾 ElevenLabs transcript saved successfully for:", videoName);
-    return res.status(200).json({
-      success: true,
-      message: "Transcription completed successfully",
-      transcript: transcriptWithPauses,
-      service: "ElevenLabs",
-      wordCount: wordCount,
-      pauseCount: pauseCount
-    });
 
   } catch (err) {
     console.error("🚨 ElevenLabs transcription failed:", err);
