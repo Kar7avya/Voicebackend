@@ -1264,30 +1264,61 @@ export const transcribeWithDeepgram = async (req, res) => {
     if (!response.ok) {
       throw new Error(`Failed to fetch video: ${response.statusText}`);
     }
+    
     const buffer = await response.arrayBuffer();
+    console.log("📊 Video buffer size:", buffer.byteLength, "bytes");
+    
+    if (buffer.byteLength === 0) {
+      throw new Error("Video file is empty or could not be downloaded");
+    }
 
     // Transcribe with Deepgram
     console.log("🎤 Sending to Deepgram API...");
-    const deepgramResponse = await deepgram.listen.prerecorded.transcribeFile(buffer, {
-      model: "nova-2",
-      smart_format: true,
-      punctuate: true,
-      paragraphs: true,
-      detect_language: true,
-      filler_words: true,
-      diarize: false,
-    });
+    let deepgramResponse;
+    let result;
+    
+    try {
+      deepgramResponse = await deepgram.listen.prerecorded.transcribeFile(buffer, {
+        model: "nova-2",
+        smart_format: true,
+        punctuate: true,
+        paragraphs: true,
+        detect_language: true,
+        filler_words: true,
+        diarize: false,
+      });
 
-    // Check for errors in Deepgram response
-    if (deepgramResponse.error) {
-      console.error("❌ Deepgram API error:", deepgramResponse.error);
-      throw new Error(`Deepgram API error: ${JSON.stringify(deepgramResponse.error)}`);
-    }
+      // Check for errors in Deepgram response
+      if (deepgramResponse.error) {
+        console.error("❌ Deepgram API error:", deepgramResponse.error);
+        throw new Error(`Deepgram API error: ${JSON.stringify(deepgramResponse.error)}`);
+      }
 
-    const result = deepgramResponse.result;
-    if (!result || !result.results) {
-      console.error("❌ Deepgram returned null or invalid result:", deepgramResponse);
-      throw new Error("Deepgram API returned invalid response. Please check the audio file format.");
+      result = deepgramResponse.result;
+      if (!result || !result.results) {
+        console.error("❌ Deepgram returned null or invalid result:", deepgramResponse);
+        throw new Error("Deepgram API returned invalid response. Please check the audio file format.");
+      }
+    } catch (deepgramErr) {
+      // Handle Deepgram SDK errors (they throw exceptions)
+      console.error("❌ Deepgram transcription error:", deepgramErr);
+      
+      // Extract error message
+      let errorMessage = "Deepgram transcription failed";
+      if (deepgramErr.message) {
+        errorMessage = deepgramErr.message;
+      } else if (deepgramErr.name === "DeepgramError") {
+        errorMessage = "Deepgram API error: " + (deepgramErr.toString() || "Unknown error");
+      } else if (typeof deepgramErr === "object") {
+        errorMessage = JSON.stringify(deepgramErr);
+      }
+      
+      return res.status(500).json({
+        success: false,
+        error: "Internal Server Error",
+        message: errorMessage,
+        details: "Please check the audio file format and ensure it contains speech."
+      });
     }
 
     const allWords = result.results?.channels?.[0]?.alternatives?.[0]?.words || [];
@@ -1461,27 +1492,64 @@ export const transcribeWithElevenLabs = async (req, res) => {
     
     // Create a proper Blob with correct MIME type
     const audioBlob = new Blob([audioBuffer], { type: 'audio/mpeg' });
+    console.log("📤 Audio blob created:", audioBlob.size, "bytes, type:", audioBlob.type);
     
     try {
-      // ElevenLabs SDK v2.22.0 - check if convert accepts options object or separate params
-      // Try with explicit model_id first
+      // ElevenLabs SDK v2.22.0 - The convert method signature may vary
+      // Based on SDK documentation, it should accept (file, options) or just (options)
       let result;
+      
+      // Try the most common format: convert(file, options)
       try {
+        console.log("📤 Attempting ElevenLabs API call with format: convert(file, {model_id})");
         result = await client.speechToText.convert(audioBlob, {
           model_id: "scribe_v1"
         });
-      } catch (paramError) {
-        // If that fails, try with options object
-        console.log("⚠️ Trying alternative API call format...");
-        result = await client.speechToText.convert({
-          file: audioBlob,
-          model_id: "scribe_v1"
-        });
+        console.log("✅ ElevenLabs API call successful with format: convert(file, options)");
+      } catch (format1Error) {
+        console.log("⚠️ First format failed:", format1Error.message);
+        // Try format: convert(options) where file is in options
+        try {
+          console.log("📤 Attempting ElevenLabs API call with format: convert({file, model_id})");
+          result = await client.speechToText.convert({
+            file: audioBlob,
+            model_id: "scribe_v1"
+          });
+          console.log("✅ ElevenLabs API call successful with format: convert({file, model_id})");
+        } catch (format2Error) {
+          console.log("⚠️ Second format failed:", format2Error.message);
+          // Try without model_id (use default)
+          try {
+            console.log("📤 Attempting ElevenLabs API call without model_id (using default)");
+            result = await client.speechToText.convert(audioBlob);
+            console.log("✅ ElevenLabs API call successful without model_id (using default)");
+          } catch (format3Error) {
+            // Last attempt: just pass the blob directly with options object
+            console.log("⚠️ Third format failed:", format3Error.message);
+            console.log("📤 Attempting ElevenLabs API call with format: convert({file})");
+            try {
+              result = await client.speechToText.convert({
+                file: audioBlob
+              });
+            } catch (format4Error) {
+              // If all formats fail, throw a comprehensive error
+              console.error("❌ All ElevenLabs API call formats failed");
+              throw new Error(`ElevenLabs API call failed. Last error: ${format4Error.message || format3Error.message}. Please check the SDK version and API documentation.`);
+            }
+          }
+        }
       }
 
       if (!result) {
         throw new Error("ElevenLabs returned null response");
       }
+      
+      console.log("✅ ElevenLabs API response received:", {
+        hasWords: !!result.words,
+        hasText: !!result.text,
+        wordsCount: result.words?.length || 0,
+        textLength: result.text?.length || 0
+      });
 
       let transcriptWithPauses = "";
       let wordCount = 0;
