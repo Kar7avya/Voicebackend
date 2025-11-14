@@ -66,8 +66,9 @@ All controllers now use service client for:
 
 ### Service Role Key:
 ```
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxxZXdrb29wcnFhdGNqb3lkd2diIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MzcxMjU3NywiZXhwIjoyMDY5Mjg4NTc3fQ.cODrap6N5J2LbhFpsZUo36n4Ife5DGSVWHly3bpsmLk
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
 ```
+**Note**: Get this from Supabase Dashboard → Settings → API → service_role key
 
 ## 3. Additional Improvements
 
