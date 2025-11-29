@@ -5,6 +5,7 @@
 import { promises as fsp } from "fs";
 import path from "path";
 import { supabase, supabaseAdmin } from "../supabaseClient.js"; 
+import { createClient } from '@supabase/supabase-js';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
@@ -100,8 +101,18 @@ export const uploadVideo = async (req, res) => {
     };
 
     console.log("💾 Inserting metadata for user:", userId);
+    console.log("🔑 Using supabaseAdmin:", supabaseAdmin === supabase ? 'FALLBACK' : 'SERVICE_ROLE');
+    console.log("🔑 Service key available:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+    
+    // Create direct service role client as backup
+    const directServiceClient = process.env.SUPABASE_SERVICE_ROLE_KEY ? 
+      createClient(
+        process.env.SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      ) : supabaseAdmin;
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await directServiceClient
       .from("metadata")
       .insert([payload]) 
       .select();

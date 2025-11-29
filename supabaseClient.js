@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.SUPABASE_URL || process.env.REACT_APP_SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_KEY || process.env.REACT_APP_SUPABASE_ANON_KEY;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.supabase_service_role_key;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('❌ Missing Supabase environment variables! Check .env file.');
@@ -54,7 +54,11 @@ export const getAuthHeaders = async () => {
 export const supabaseAdmin = supabaseServiceKey ? 
   createClient(supabaseUrl, supabaseServiceKey, {
     auth: { autoRefreshToken: false, persistSession: false }
-  }) : null;
+  }) : supabase; // Fallback to regular client if service key missing
+
+if (!supabaseServiceKey) {
+  console.warn('⚠️ SUPABASE_SERVICE_ROLE_KEY missing - using regular client (may have RLS issues)');
+}
 
 export { supabase };
 export default supabase;
