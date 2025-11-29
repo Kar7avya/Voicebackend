@@ -56,4 +56,5 @@ export const supabaseAdmin = supabaseServiceKey ?
     auth: { autoRefreshToken: false, persistSession: false }
   }) : null;
 
+export { supabase };
 export default supabase;
