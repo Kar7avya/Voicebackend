@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
 const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('❌ Missing Supabase environment variables! Check .env file.');
@@ -48,5 +49,11 @@ export const getAuthHeaders = async () => {
     return null; 
   }
 };
+
+// Admin client for operations that bypass RLS
+export const supabaseAdmin = supabaseServiceKey ? 
+  createClient(supabaseUrl, supabaseServiceKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  }) : null;
 
 export default supabase;
