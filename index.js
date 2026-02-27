@@ -12,6 +12,7 @@ import transcriptionRoutes from "./routes/transcription.routes.js";
 import metadataRoutes from "./routes/metadata.routes.js";
 import ttsRoutes from "./routes/tts.js";
 
+
 // Load environment variables
 dotenv.config();
 
