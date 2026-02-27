@@ -10,6 +10,7 @@ import uploadRoutes from "./routes/upload.routes.js";
 import framesRoutes from "./routes/frames.routes.js";
 import transcriptionRoutes from "./routes/transcription.routes.js";
 import metadataRoutes from "./routes/metadata.routes.js";
+import ttsRoutes from "./routes/tts.js";
 
 // Load environment variables
 dotenv.config();
@@ -143,8 +144,7 @@ console.log("\n🔍 === ROUTES DEBUG INFO ===");
 console.log("📦 Upload Routes:", typeof uploadRoutes, uploadRoutes ? "✅" : "❌");
 console.log("📦 Frames Routes:", typeof framesRoutes, framesRoutes ? "✅" : "❌");
 console.log("📦 Transcription Routes:", typeof transcriptionRoutes, transcriptionRoutes ? "✅" : "❌");
-console.log("📦 Metadata Routes:", typeof metadataRoutes, metadataRoutes ? "✅" : "❌");
-console.log("=========================\n");
+console.log("📦 Metadata Routes:", typeof metadataRoutes, metadataRoutes ? "✅" : "❌");console.log("📦 TTS Routes:", typeof ttsRoutes, ttsRoutes ? "✅" : "❌");console.log("=========================\n");
 
 // 📁 Ensure folders exist
 ["uploads", "frames"].forEach((folder) => {
@@ -189,6 +189,9 @@ console.log("✅ Mounted: /api (frames routes)");
 
 app.use("/api", transcriptionRoutes);
 console.log("✅ Mounted: /api (transcription routes)");
+
+app.use("/api/tts", ttsRoutes);
+console.log("✅ Mounted: /api/tts");
 
 // ============================================
 // 🚨 404 FALLBACK
