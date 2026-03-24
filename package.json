@@ -16,6 +16,7 @@
     "@elevenlabs/elevenlabs-js": "^2.22.0",
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.56.1",
+    "axios": "^1.13.6",
     "buffer": "^6.0.3",
     "child_process": "^1.0.2",
     "cors": "^2.8.5",
