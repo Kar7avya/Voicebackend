@@ -1,21 +1,7 @@
-// const express = require("express");
-// const router = express.Router();
-// const {
-//     getStatus,
-//     getVoices,
-//     generateAudio,
-//     getHistory,
-// } = require("../controllers/ttsController");
+import express from "express";
+import axios from "axios";
 
-// router.get("/status", getStatus);
-// router.get("/voices", getVoices);
-// router.post("/generate", generateAudio);
-// router.get("/history", getHistory);
-
-// module.exports = router;
-const express = require("express");
-const router  = express.Router();
-const axios   = require("axios");
+const router = express.Router();
 
 // Your Colab ngrok URL
 const TTS_API = "https://inaudible-unwatchfully-pandora.ngrok-free.dev";
@@ -23,14 +9,9 @@ const TTS_API = "https://inaudible-unwatchfully-pandora.ngrok-free.dev";
 // GET /api/tts/voices
 router.get("/voices", async (req, res) => {
     try {
-        const response = await axios.get(
-            TTS_API + "/voices",
-            {
-                headers: {
-                    "ngrok-skip-browser-warning": "true"
-                }
-            }
-        );
+        const response = await axios.get(TTS_API + "/voices", {
+            headers: { "ngrok-skip-browser-warning": "true" }
+        });
         res.json(response.data);
     } catch (error) {
         res.status(500).json({
@@ -46,18 +27,15 @@ router.post("/generate", async (req, res) => {
         const { text, voice_key, mood } = req.body;
 
         if (!text) {
-            return res.status(400).json({
-                error: "Text is required"
-            });
+            return res.status(400).json({ error: "Text is required" });
         }
 
-        // Call Colab TTS API
         const response = await axios.post(
             TTS_API + "/generate",
             {
-                text:      text,
+                text: text,
                 voice_key: voice_key || "hindi_male",
-                mood:      mood      || "neutral"
+                mood: mood || "neutral"
             },
             {
                 headers: {
@@ -67,23 +45,23 @@ router.post("/generate", async (req, res) => {
             }
         );
 
-        const data     = response.data;
+        const data = response.data;
         const audioUrl = TTS_API + "/audio/" + data.filename;
 
         res.json({
-            success:   true,
+            success: true,
             audio_url: audioUrl,
-            filename:  data.filename,
+            filename: data.filename,
             voice_key: voice_key,
-            mood:      mood
+            mood: mood
         });
 
     } catch (error) {
         res.status(500).json({
-            error:  "TTS generation failed",
+            error: "TTS generation failed",
             detail: error.message
         });
     }
 });
 
-module.exports = router;
+export default router;  // ✅ This is what was missing
