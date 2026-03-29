@@ -14,7 +14,7 @@ function getClient() {
 const BUCKET  = "projectai";
 const USER_ID = "guest";
 
-// ── Save session (basic + deep analysis) ─────────────────────────
+// ── Save session (basic + deep analysis + Groq AI) ───────────────
 export const saveSession = async (req, res) => {
   try {
     const supabase = getClient();
@@ -24,7 +24,6 @@ export const saveSession = async (req, res) => {
       return res.status(400).json({ success:false, error:"avg_score required" });
     }
 
-    // SQL INSERT — stores all metrics including deep analysis
     const { data, error } = await supabase
       .from("sessions")
       .insert([{
@@ -41,20 +40,21 @@ export const saveSession = async (req, res) => {
         rating:           body.rating           || "Unknown",
         tips:             body.tips             || [],
         score_timeline:   body.score_timeline   || [],
-        // Deep analysis fields
-        deep_analysis:    body.deep_analysis    || null,
+        deep_analysis:    body.deep_analysis    || null,   // includes groq_analysis inside
       }])
       .select()
       .single();
 
     if (error) throw error;
 
-    // Upload FULL session JSON to projectai bucket
+    // Upload full JSON (with groq_analysis) to projectai bucket
     const path    = `sessions/${USER_ID}/${data.id}.json`;
     const payload = JSON.stringify({
       ...body,
-      supabase_id:  data.id,
-      uploaded_at:  new Date().toISOString(),
+      supabase_id: data.id,
+      uploaded_at: new Date().toISOString(),
+      // Groq analysis stored at top level in bucket for easy access
+      groq_analysis: body.deep_analysis?.groq_analysis || null,
     }, null, 2);
 
     const { error: uploadErr } = await supabase.storage
@@ -65,7 +65,7 @@ export const saveSession = async (req, res) => {
       });
 
     if (uploadErr) console.warn("⚠️ Bucket upload:", uploadErr.message);
-    else console.log("✅Saved to bucket:", path);
+    else console.log("✅ Saved to bucket:", path);
 
     return res.status(201).json({ success:true, session:data, bucket_path:path });
 
@@ -92,7 +92,7 @@ export const getSessions = async (req, res) => {
   }
 };
 
-// ── Get single session + full metadata from bucket ────────────────
+// ── Get single session ────────────────────────────────────────────
 export const getSessionById = async (req, res) => {
   try {
     const supabase = getClient();
@@ -101,7 +101,6 @@ export const getSessionById = async (req, res) => {
       .from("sessions").select("*").eq("id", id).single();
     if (error) throw error;
 
-    // Download full JSON from bucket
     const { data: file } = await supabase.storage
       .from(BUCKET).download(`sessions/${USER_ID}/${id}.json`);
     let metadata = null;
@@ -121,7 +120,6 @@ export const getUserStats = async (req, res) => {
     if (error) throw error;
     return res.json({ success:true, stats:data });
   } catch (err) {
-    // fallback
     try {
       const supabase = getClient();
       const { data: rows } = await supabase
