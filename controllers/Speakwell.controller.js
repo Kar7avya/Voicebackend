@@ -14,7 +14,7 @@ function getClient() {
 const BUCKET  = "projectai";
 const USER_ID = "guest";
 
-// ── Save session (basic + deep analysis + Groq AI) ───────────────
+// ── Savesession (basic + deep analysis + Groq AI) ───────────────
 export const saveSession = async (req, res) => {
   try {
     const supabase = getClient();
