@@ -58,7 +58,7 @@ export const saveSession = async (req, res) => {
       });
 
     if (uploadErr) console.warn("⚠️ Bucket upload:", uploadErr.message);
-    else console.log("✅ Saved to bucket:", path);
+    else console.log("✅Saved to bucket:", path);
 
     return res.status(201).json({ success:true, session:data, bucket_path:path });
 
