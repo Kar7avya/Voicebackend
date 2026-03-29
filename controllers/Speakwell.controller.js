@@ -1,9 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+let _supabase = null;
+function getClient() {
+  if (!_supabase) {
+    _supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+  }
+  return _supabase;
+}
 
 const BUCKET  = "projectai";
 const USER_ID = "guest";
@@ -11,6 +17,7 @@ const USER_ID = "guest";
 // ── Save session (basic + deep analysis) ─────────────────────────
 export const saveSession = async (req, res) => {
   try {
+    const supabase = getClient();
     const body = req.body;
 
     if (body.avg_score === undefined) {
@@ -71,6 +78,7 @@ export const saveSession = async (req, res) => {
 // ── Get all sessions ──────────────────────────────────────────────
 export const getSessions = async (req, res) => {
   try {
+    const supabase = getClient();
     const { data, error } = await supabase
       .from("sessions")
       .select("id,name,created_at,duration_seconds,avg_score,max_score,good_percent,warn_percent,bad_percent,total_frames,rating,tips,deep_analysis")
@@ -87,6 +95,7 @@ export const getSessions = async (req, res) => {
 // ── Get single session + full metadata from bucket ────────────────
 export const getSessionById = async (req, res) => {
   try {
+    const supabase = getClient();
     const { id } = req.params;
     const { data, error } = await supabase
       .from("sessions").select("*").eq("id", id).single();
@@ -107,12 +116,14 @@ export const getSessionById = async (req, res) => {
 // ── Get stats ─────────────────────────────────────────────────────
 export const getUserStats = async (req, res) => {
   try {
+    const supabase = getClient();
     const { data, error } = await supabase.rpc("get_user_stats", { p_user_id: USER_ID });
     if (error) throw error;
     return res.json({ success:true, stats:data });
   } catch (err) {
     // fallback
     try {
+      const supabase = getClient();
       const { data: rows } = await supabase
         .from("sessions").select("avg_score,duration_seconds").eq("user_id", USER_ID);
       const r = rows || [];
@@ -132,6 +143,7 @@ export const getUserStats = async (req, res) => {
 // ── Delete session ────────────────────────────────────────────────
 export const deleteSession = async (req, res) => {
   try {
+    const supabase = getClient();
     const { id } = req.params;
     const { error } = await supabase.from("sessions")
       .delete().eq("id", id).eq("user_id", USER_ID);
