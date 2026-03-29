@@ -4,7 +4,7 @@ let _supabase = null;
 function getClient() {
   if (!_supabase) {
     _supabase = createClient(
-      process.env.SUPABASE_URL,
+      process.env.REACT_APP_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
   }
@@ -14,7 +14,7 @@ function getClient() {
 const BUCKET  = "projectai";
 const USER_ID = "guest";
 
-// ── Savesession (basic + deep analysis + Groq AI) ───────────────
+// ── Save session (basic + deep analysis + Groq AI) ───────────────
 export const saveSession = async (req, res) => {
   try {
     const supabase = getClient();
