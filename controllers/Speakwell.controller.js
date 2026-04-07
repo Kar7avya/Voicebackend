@@ -11,14 +11,19 @@ function getClient() {
   return _supabase;
 }
 
-const BUCKET  = "projectai";
-const USER_ID = "guest";
+const BUCKET = "projectai";
 
-// ── Save session (basic + deep analysis + Groq AI) ───────────────
+// Helper — reads user id from request header, falls back to "guest"
+function getUserId(req) {
+  return req.headers["x-user-id"] || "guest";
+}
+
+// ── Save session ──────────────────────────────────────────────────
 export const saveSession = async (req, res) => {
   try {
     const supabase = getClient();
-    const body = req.body;
+    const body     = req.body;
+    const USER_ID  = getUserId(req);
 
     if (body.avg_score === undefined) {
       return res.status(400).json({ success:false, error:"avg_score required" });
@@ -40,20 +45,18 @@ export const saveSession = async (req, res) => {
         rating:           body.rating           || "Unknown",
         tips:             body.tips             || [],
         score_timeline:   body.score_timeline   || [],
-        deep_analysis:    body.deep_analysis    || null,   // includes groq_analysis inside
+        deep_analysis:    body.deep_analysis    || null,
       }])
       .select()
       .single();
 
     if (error) throw error;
 
-    // Upload full JSON (with groq_analysis) to projectai bucket
     const path    = `sessions/${USER_ID}/${data.id}.json`;
     const payload = JSON.stringify({
       ...body,
-      supabase_id: data.id,
-      uploaded_at: new Date().toISOString(),
-      // Groq analysis stored at top level in bucket for easy access
+      supabase_id:   data.id,
+      uploaded_at:   new Date().toISOString(),
       groq_analysis: body.deep_analysis?.groq_analysis || null,
     }, null, 2);
 
@@ -79,6 +82,8 @@ export const saveSession = async (req, res) => {
 export const getSessions = async (req, res) => {
   try {
     const supabase = getClient();
+    const USER_ID  = getUserId(req);
+
     const { data, error } = await supabase
       .from("sessions")
       .select("id,name,created_at,duration_seconds,avg_score,max_score,good_percent,warn_percent,bad_percent,total_frames,rating,tips,deep_analysis")
@@ -96,9 +101,11 @@ export const getSessions = async (req, res) => {
 export const getSessionById = async (req, res) => {
   try {
     const supabase = getClient();
-    const { id } = req.params;
+    const USER_ID  = getUserId(req);
+    const { id }   = req.params;
+
     const { data, error } = await supabase
-      .from("sessions").select("*").eq("id", id).single();
+      .from("sessions").select("*").eq("id", id).eq("user_id", USER_ID).single();
     if (error) throw error;
 
     const { data: file } = await supabase.storage
@@ -116,12 +123,15 @@ export const getSessionById = async (req, res) => {
 export const getUserStats = async (req, res) => {
   try {
     const supabase = getClient();
+    const USER_ID  = getUserId(req);
+
     const { data, error } = await supabase.rpc("get_user_stats", { p_user_id: USER_ID });
     if (error) throw error;
     return res.json({ success:true, stats:data });
   } catch (err) {
     try {
       const supabase = getClient();
+      const USER_ID  = getUserId(req);
       const { data: rows } = await supabase
         .from("sessions").select("avg_score,duration_seconds").eq("user_id", USER_ID);
       const r = rows || [];
@@ -142,7 +152,9 @@ export const getUserStats = async (req, res) => {
 export const deleteSession = async (req, res) => {
   try {
     const supabase = getClient();
-    const { id } = req.params;
+    const USER_ID  = getUserId(req);
+    const { id }   = req.params;
+
     const { error } = await supabase.from("sessions")
       .delete().eq("id", id).eq("user_id", USER_ID);
     if (error) throw error;
